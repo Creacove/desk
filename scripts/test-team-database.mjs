@@ -20,6 +20,7 @@ const MIGRATIONS_DIR = path.join(REPO_ROOT, "supabase", "migrations");
 const TEAM_SETUP = path.join(REPO_ROOT, "supabase", "tests", "artist_team_seat_concurrency_setup.sql");
 const TEAM_VERIFY = path.join(REPO_ROOT, "supabase", "tests", "artist_team_seat_concurrency_verify.sql");
 const TEAM_CONTINUATION_GOLDEN = path.join(REPO_ROOT, "supabase", "tests", "artist_team_manager_continuation_golden.sql");
+const GENERIC_MISSION_CONTRACT = path.join(REPO_ROOT, "supabase", "tests", "generic_mission_task_contract_smoke.sql");
 
 const FIXTURE = Object.freeze({
   account: "91000000-0000-4000-8000-000000000001",
@@ -151,23 +152,27 @@ async function sourceChecks() {
   const authorityName = migrationFiles.find((name) => name.includes("artist_team_authority"));
   const assignmentName = migrationFiles.find((name) => name.includes("artist_team_runtime_assignment"));
   const remindersName = migrationFiles.find((name) => name.includes("artist_team_personal_reminders"));
+  const genericMissionName = migrationFiles.find((name) => name.includes("generic_mission_task_contract"));
   check("identity migration", Boolean(identity), "workspace_identity_boundary migration is missing");
   check("team migration foundation", Boolean(foundationName), "artist_team_foundation migration is missing");
   check("team migration membership", Boolean(membershipName), "artist_team_membership_operations migration is missing");
   check("team migration authority", Boolean(authorityName), "artist_team_authority migration is missing");
   check("team runtime assignment migration", Boolean(assignmentName), "artist_team_runtime_assignment migration is missing");
   check("team personal reminders migration", Boolean(remindersName), "artist_team_personal_reminders migration is missing");
+  check("generic mission contract migration", Boolean(genericMissionName), "generic_mission_task_contract migration is missing");
   if (identity && foundationName) check("migration order", identity < foundationName, `${foundationName} must follow ${identity}`);
   if (foundationName && membershipName) check("mutation migration order", foundationName < membershipName, `${membershipName} must follow ${foundationName}`);
   if (membershipName && authorityName) check("authority migration order", membershipName < authorityName, `${authorityName} must follow ${membershipName}`);
   if (authorityName && assignmentName) check("assignment migration order", authorityName < assignmentName, `${assignmentName} must follow ${authorityName}`);
   if (assignmentName && remindersName) check("reminder migration order", assignmentName < remindersName, `${remindersName} must follow ${assignmentName}`);
+  if (remindersName && genericMissionName) check("generic mission migration order", remindersName < genericMissionName, `${genericMissionName} must follow ${remindersName}`);
 
   const foundation = foundationName ? await readText(path.join(MIGRATIONS_DIR, foundationName)) : "";
   const membership = membershipName ? await readText(path.join(MIGRATIONS_DIR, membershipName)) : "";
   const authority = authorityName ? await readText(path.join(MIGRATIONS_DIR, authorityName)) : "";
   const assignment = assignmentName ? await readText(path.join(MIGRATIONS_DIR, assignmentName)) : "";
   const reminders = remindersName ? await readText(path.join(MIGRATIONS_DIR, remindersName)) : "";
+  const genericMission = genericMissionName ? await readText(path.join(MIGRATIONS_DIR, genericMissionName)) : "";
   const handler = await readText(path.join(REPO_ROOT, "supabase", "functions", "_shared", "accountTeamHandler.ts"));
   const authorization = await readText(path.join(REPO_ROOT, "supabase", "functions", "_shared", "workspaceAuthorization.ts"));
   const functionConfig = await readText(path.join(REPO_ROOT, "supabase", "config.toml"));
@@ -179,6 +184,9 @@ async function sourceChecks() {
   check("continuation assignment trigger", /create trigger zz_persist_team_continuation_assignments/i.test(assignment), "task-result continuation assignment trigger is missing");
   check("validated assignment grant", /grant execute on function public\._persist_model_assignment_v1[\s\S]*?to service_role/i.test(assignment), "validated assignment helper is not granted to service_role");
   check("personal reminder delivery", /recipient_user_id[\s\S]*?deliver_in_app_task_reminder_v1/i.test(reminders), "personal reminder addressing is missing");
+  check("typed mission intent", /task_intent[\s\S]*?review_approval/i.test(genericMission), "typed mission task intent is missing");
+  check("versioned review target", /review_target_version_id[\s\S]*?activate_review_task_for_target_v1/i.test(genericMission), "versioned review activation is missing");
+  check("Genesis finalizer adapter", /_apply_mission_genesis_graph_legacy_v2[\s\S]*?review_target_missing/i.test(genericMission), "Mission Genesis finalizer is not guarded by the typed contract");
   check("account lock", /from\s+public\.accounts\b[\s\S]{0,180}\bfor\s+update\b/i.test(membership), "mutation path must lock the account before seat changes");
   const serviceGrantBlocks = [...membership.matchAll(/grant\s+execute\s+on\s+function([\s\S]*?)to\s+service_role\s*;/gi)]
     .map((match) => match[1]).join("\n");
@@ -283,6 +291,8 @@ function cleanupSql() {
 async function databaseChecks(options) {
   try {
     await runSql(options, await readText(TEAM_SETUP), "team concurrency setup");
+    await runSql(options, await readText(GENERIC_MISSION_CONTRACT), "generic mission task contract smoke");
+    console.log("Generic mission task contract smoke passed.");
     await runSql(options, await readText(TEAM_CONTINUATION_GOLDEN), "multi-human Manager continuation golden");
     console.log("Multi-human Manager continuation golden passed.");
     await runConcurrency(options);

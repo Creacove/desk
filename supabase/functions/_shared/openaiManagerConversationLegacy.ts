@@ -5,6 +5,10 @@ import type {
   MissionGenesisQuestion,
   MissionGenesisTask,
 } from "./openaiMissionGenesis.ts";
+import {
+  normalizeMissionTask,
+  type ReviewTargetInput,
+} from "./missionTaskContract.ts";
 
 export type ManagerConversationCreatedWork = {
   type: "music_item" | "mission" | "task";
@@ -107,12 +111,25 @@ const checkpointSchema = {
 const taskSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["title", "scheduleKey", "ownerRole", "workMode", "assigneeUserId", "assignmentReason", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "deadline", "sourceRefs"],
+  required: ["title", "scheduleKey", "ownerRole", "workMode", "intent", "assigneeUserId", "assignmentReason", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "deadline", "sourceRefs"],
   properties: {
     title: { type: "string" },
     scheduleKey: { type: "string" },
     ownerRole: { type: "string" },
     workMode: { type: "string", enum: ["artist_action", "collaborative", "manager_work"] },
+    intent: { type: "string", enum: ["manager_work", "human_action", "collaborative_draft", "review_approval"] },
+    readiness: { type: "string", enum: ["preparing", "ready", "needs_revision", "completed", "blocked"] },
+    reviewTarget: {
+      type: ["object", "null"],
+      additionalProperties: false,
+      required: ["artifactType", "artifactId", "status"],
+      properties: {
+        artifactType: { type: "string", enum: ["manager_output", "song_document"] },
+        artifactId: { type: "string" },
+        versionId: { type: ["string", "null"] },
+        status: { type: "string", enum: ["draft", "ready_for_review", "accepted", "needs_revision"] },
+      },
+    },
     assigneeUserId: { type: ["string", "null"] },
     assignmentReason: { type: ["string", "null"] },
     primaryCheckpointKey: { type: "string" },
@@ -120,7 +137,7 @@ const taskSchema = {
     steps: { ...stringArraySchema, minItems: 2, maxItems: 6 },
     evidenceNeeded: stringArraySchema,
     completionExpectation: { type: "string" },
-    completionMode: { type: "string", enum: ["result_note", "manager_draft", "evidence"] },
+    completionMode: { type: "string", enum: ["result_note", "manager_draft", "evidence", "approval"] },
     deliverableTitle: { type: "string" },
     deliverableRequirements: stringArraySchema,
     managerResponsibility: { type: "string" },
@@ -324,8 +341,8 @@ export function buildManagerConversationInstructions(playbookInstructions = "") 
     "For an explicitly detailed or day-to-day mission request, keep one bounded route (normally no more than 14 human Tasks), keep responseBody concise, and put the detail into ordered executable Task steps. Never let the response become so large that the structured JSON is cut off.",
     "Never create lightweight mission/task work. Do not emit one task with a duplicate checkpoint. If any mission work is created or updated, provide mission identity, checkpoint decision rules, task steps, completion expectations, riskIfLate, sourceRefs, and permission requests.",
     "Use outcome activate_mission for new missions. Use outcome update_existing_mission for changes to existing missions, including adding tasks or checkpoints to existing work; provide existingMissionId and a complete revised plan. In an attached song conversation, existingMissionId must equal the attached linked mission ID.",
-    "Every new task must declare workMode: artist_action for work the artist/team performs or reports, or collaborative for work the artist/team and Manager build or approve together. A manager_draft task must be collaborative. Do not generate manager_work tasks; put Manager-only analysis in checkpoint.managerRead. Tasks may be empty when nothing is needed from the artist.",
-    "Every new task must declare its completion contract: result_note for an observable user-reported outcome or manager_draft when you can produce the substantive artifact in this chat. The legacy evidence value is compatibility-only; uploads are optional context and must never gate work.",
+    "Every new task must declare one intent: human_action for work the artist/team performs or reports, collaborative_draft for substantive work Desk prepares with the artist/team, and review_approval only when the runtime supplies a ready artifact target and immutable version. Manager-only analysis belongs in checkpoint.managerRead and must not be a visible task. A collaborative_draft must use collaborative workMode and manager_draft completionMode.",
+    "Every new task must declare its completion contract: result_note for an observable user-reported outcome, manager_draft for a substantive artifact prepared in this chat, or approval for a typed review decision. The legacy evidence value is compatibility-only; uploads are optional context and must never gate work.",
     "When taskContext is present, work on that task inside this conversation. Produce a usable draft in responseBody, cover its deliverable requirements, state assumptions, and ask at most one question that materially changes the draft.",
     "If user-controlled context is missing, return one context question by default (or at most three tightly related questions that unlock the same decision) and no missionGraphDecisions. Include recommendedAnswer and recommendationReason so an inexperienced artist can accept your best judgment or say they are unsure.",
     "Return createdWork only for already-known concrete non-mission artifacts. For mission/task creates and updates, prefer missionGraphDecisions and let the server emit canonical createdWork after persistence. Use proposedActions for internal next steps that the app can later approve or execute.",
@@ -488,11 +505,16 @@ function normalizeTask(value: unknown): MissionGenesisTask | null {
     ownerRole: cleanString(task.ownerRole, "Manager"),
     workMode: ["artist_action", "collaborative", "manager_work"].includes(String(task.workMode))
       ? task.workMode as MissionGenesisTask["workMode"]
-      : task.completionMode === "manager_draft"
-        ? "collaborative"
-        : cleanString(task.ownerRole, "Manager").trim().toLowerCase() === "manager"
-          ? "manager_work"
-          : "artist_action",
+      : "artist_action" as MissionGenesisTask["workMode"],
+    intent: ["manager_work", "human_action", "collaborative_draft", "review_approval"].includes(String(task.intent))
+      ? task.intent as MissionGenesisTask["intent"]
+      : null,
+    ...(typeof task.readiness === "string" && task.readiness.trim()
+      ? { readiness: task.readiness as MissionGenesisTask["readiness"] }
+      : {}),
+    ...(task.reviewTarget && typeof task.reviewTarget === "object"
+      ? { reviewTarget: normalizeReviewTarget(task.reviewTarget as Record<string, unknown>) }
+      : {}),
     assigneeUserId: typeof task.assigneeUserId === "string" && task.assigneeUserId.trim() ? task.assigneeUserId.trim() : null,
     assignmentReason: typeof task.assignmentReason === "string" && task.assignmentReason.trim() ? task.assignmentReason.trim().slice(0, 240) : null,
     primaryCheckpointKey: cleanString(task.primaryCheckpointKey, ""),
@@ -500,9 +522,9 @@ function normalizeTask(value: unknown): MissionGenesisTask | null {
     steps: distinctStrings(task.steps).slice(0, 6),
     evidenceNeeded: cleanStringArray(task.evidenceNeeded).slice(0, 12),
     completionExpectation: cleanString(task.completionExpectation, ""),
-    completionMode: ["result_note", "manager_draft", "evidence"].includes(String(task.completionMode))
+    completionMode: ["result_note", "manager_draft", "evidence", "approval"].includes(String(task.completionMode))
       ? task.completionMode as MissionGenesisTask["completionMode"]
-      : "result_note",
+      : null,
     deliverableTitle: cleanString(task.deliverableTitle, ""),
     deliverableRequirements: cleanStringArray(task.deliverableRequirements).slice(0, 12),
     managerResponsibility: cleanString(task.managerResponsibility, ""),
@@ -511,9 +533,21 @@ function normalizeTask(value: unknown): MissionGenesisTask | null {
     deadline: normalizeTaskDeadline(task.deadline),
     sourceRefs: cleanStringArray(task.sourceRefs).slice(0, 24),
   };
-  return normalized.title && normalized.primaryCheckpointKey && normalized.purpose && normalized.steps.length >= 2 && normalized.completionExpectation && normalized.riskIfLate
-    ? normalized
+  if (!normalized.title || !normalized.primaryCheckpointKey || !normalized.purpose || normalized.steps.length < 2 || !normalized.completionExpectation || !normalized.riskIfLate || !normalized.intent || !normalized.completionMode) return null;
+  const normalizedTask = normalized as MissionGenesisTask;
+  if (normalizedTask.intent !== "manager_work") normalizeMissionTask(normalizedTask);
+  return normalizedTask;
+}
+
+function normalizeReviewTarget(value: Record<string, unknown>): ReviewTargetInput | null {
+  const artifactType = value.artifactType === "manager_output" || value.artifactType === "song_document" ? value.artifactType : null;
+  const artifactId = cleanString(value.artifactId, "");
+  const status = ["draft", "ready_for_review", "accepted", "needs_revision"].includes(String(value.status))
+    ? value.status as ReviewTargetInput["status"]
     : null;
+  if (!artifactType || !artifactId || !status) return null;
+  const versionId = typeof value.versionId === "string" && value.versionId.trim() ? value.versionId.trim() : null;
+  return { artifactType, artifactId, versionId, status };
 }
 
 const releaseTaskScheduleKeys = new Set([

@@ -34,6 +34,14 @@ describe("Manager execution loop", () => {
     expect(taskExecution).toContain("Manager work is machine work and does not consume calendar days.");
   });
 
+  it("fails closed when a review target is still preparing or stale", () => {
+    expect(taskExecution).toContain("task_intent");
+    expect(taskExecution).toContain("readiness");
+    expect(taskExecution).toContain("review_target_version_id");
+    expect(taskExecution).toContain("This review is still being prepared. Refresh in a moment.");
+    expect(taskExecution).toContain("Review tasks cannot be started as human work.");
+  });
+
   it("persists changed reality before Manager reasons about downstream impact", () => {
     const updateIndex = taskExecution.indexOf("available_from: availableFrom");
     const reviewIndex = taskExecution.indexOf("callOpenAIMoveReview(context)");

@@ -18,6 +18,14 @@ export type TodayTaskState = {
   status: string;
   ownerRole?: string;
   workMode?: string;
+  intent?: "manager_work" | "human_action" | "collaborative_draft" | "review_approval" | string;
+  readiness?: "preparing" | "ready" | "needs_revision" | "completed" | "blocked" | string;
+  reviewTarget?: {
+    artifactType: "manager_output" | "song_document" | string;
+    artifactId: string;
+    versionId?: string;
+    status: "draft" | "ready_for_review" | "accepted" | "needs_revision" | string;
+  };
   purpose?: string;
   deadline?: string;
   availableFrom?: string;
@@ -201,7 +209,7 @@ export function projectTodayExecution(packet: TodayRuntimePacket): TodayExecutio
 
   for (const task of packet.tasks) {
     const mission = missionById.get(task.missionId);
-    if (!mission || !isTaskOnCurrentPlan(task, mission) || !isTaskInCurrentMissionPhase(task, mission, packet.checkpoints) || !isHumanTask(task) || TERMINAL_TASK_STATUSES.has(normalize(task.status))) continue;
+    if (!mission || !isTaskOnCurrentPlan(task, mission) || !isTaskInCurrentMissionPhase(task, mission, packet.checkpoints) || !isHumanTask(task) || !isTaskReadyForToday(task) || TERMINAL_TASK_STATUSES.has(normalize(task.status))) continue;
     if (permissionTaskIds.has(task.id)) continue;
     if (!isAvailableNow(task.availableFrom, now)) continue;
 
@@ -372,9 +380,27 @@ function isTaskInCurrentMissionPhase(task: TodayTaskState, mission: TodayMission
 }
 
 function isHumanTask(task: TodayTaskState) {
+  if (normalize(task.intent) === "manager_work") return false;
   const mode = normalize(task.workMode);
   if (mode) return mode !== "manager_work";
   return normalize(task.ownerRole) !== "manager";
+}
+
+function isTaskReadyForToday(task: TodayTaskState) {
+  const intent = normalize(task.intent);
+  const readiness = normalize(task.readiness);
+  if (readiness === "preparing") return false;
+  if (intent === "review_approval") {
+    return readiness === "ready"
+      && normalize(task.approvalState) === "needs_approval"
+      && normalize(task.status) === "needs_approval"
+      && Boolean(
+        task.reviewTarget?.artifactId
+          && task.reviewTarget.versionId
+          && normalize(task.reviewTarget.status) === "ready_for_review",
+      );
+  }
+  return readiness !== "blocked";
 }
 
 function isDueSoon(value: string | undefined, now: Date) {

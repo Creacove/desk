@@ -134,6 +134,7 @@ function activeOutput() {
         title: "Report the London listening-session response for After Midnight",
         ownerRole: "Artist / team",
         workMode: "artist_action",
+        intent: "human_action",
         primaryCheckpointKey: "london_return_signal",
         purpose: "Give the Manager an observable London response that is not already available in the packet.",
         steps: [
@@ -143,6 +144,7 @@ function activeOutput() {
         ],
         evidenceNeeded: ["Current London response baseline"],
         completionExpectation: "A dated baseline and one agreed review metric are saved.",
+        completionMode: "result_note",
         riskIfLate: "The team cannot distinguish movement from noise.",
         sourceRefs: ["evidence-london", "song-midnight"],
       },
@@ -200,6 +202,8 @@ function blaqbonezMixedOutput() {
       {
         title: "Draft Career Thesis (Manager)",
         ownerRole: "Manager",
+        workMode: "manager_work",
+        intent: "manager_work",
         primaryCheckpointKey: "career_thesis_signed",
         purpose: "Convert artist goal into a tight North Star.",
         steps: [
@@ -209,12 +213,15 @@ function blaqbonezMixedOutput() {
         ],
         evidenceNeeded: ["Signed career thesis"],
         completionExpectation: "Career thesis exists and is signed.",
+        completionMode: "result_note",
         riskIfLate: "Team lacks alignment.",
         sourceRefs: ["ev-public-identity", "memory-guardrail"],
       },
       {
         title: "Team Ops - Assign Owners and Approval Flow",
         ownerRole: "Manager",
+        workMode: "manager_work",
+        intent: "manager_work",
         primaryCheckpointKey: "career_thesis_signed",
         purpose: "Ensure every task has a clear owner.",
         steps: [
@@ -223,12 +230,15 @@ function blaqbonezMixedOutput() {
         ],
         evidenceNeeded: ["Owner list"],
         completionExpectation: "Approval flow exists.",
+        completionMode: "result_note",
         riskIfLate: "Execution stalls.",
         sourceRefs: ["memory-guardrail"],
       },
       {
         title: "Select Next Career Unlock - Nigeria Creator-Led Market Test",
         ownerRole: "Marketing",
+        workMode: "artist_action",
+        intent: "human_action",
         primaryCheckpointKey: "creator_pilot_fits_budget",
         purpose: "Turn the thesis into a measurable creator pilot.",
         steps: [
@@ -237,6 +247,7 @@ function blaqbonezMixedOutput() {
         ],
         evidenceNeeded: ["Pilot plan"],
         completionExpectation: "Pilot plan is approved.",
+        completionMode: "result_note",
         riskIfLate: "Missed window to capture attention trend.",
         sourceRefs: ["ev-chanel", "ev-nigeria"],
       },
@@ -788,6 +799,8 @@ describe("OpenAI Mission Genesis", () => {
       {
         title: "Upload Spotify for Artists export for After Midnight",
         ownerRole: "Manager",
+        workMode: "manager_work",
+        intent: "manager_work",
         primaryCheckpointKey: "private_source_uploaded",
         purpose: "Add private analytics to improve Manager confidence.",
         steps: [
@@ -810,6 +823,8 @@ describe("OpenAI Mission Genesis", () => {
     output.checkpoints[0].question = "Is the missing source strong enough to approve or reject the $5,000 London validation spend?";
     output.checkpoints[0].decisionRule = "Approve the spend only if the uploaded source confirms save, return, or smart-link proof; otherwise reject or revise the spend plan.";
     output.tasks[0].ownerRole = "Artist / team";
+    output.tasks[0].workMode = "artist_action";
+    output.tasks[0].intent = "human_action";
     output.tasks[0].purpose = "Produce the missing proof needed for the $5,000 London spend approval decision.";
     output.tasks[0].completionExpectation = "The Manager can approve, reject, or revise the $5,000 London spend decision from the uploaded proof.";
 
@@ -841,6 +856,8 @@ describe("OpenAI Mission Genesis", () => {
       {
         title: "Approve Blaqbonez's 90-day positioning thesis",
         ownerRole: "Artist / team",
+        workMode: "artist_action",
+        intent: "human_action",
         primaryCheckpointKey: "positioning_thesis_decides",
         purpose: "Give the team a decision rule before scaling Chanel activity.",
         steps: [
@@ -850,6 +867,7 @@ describe("OpenAI Mission Genesis", () => {
         ],
         evidenceNeeded: ["Signed 90-day positioning thesis"],
         completionExpectation: "The team has a signed position that governs Chanel and the next opportunities.",
+        completionMode: "result_note",
         riskIfLate: "Chanel activity may scale without strengthening Blaqbonez's artist identity.",
         sourceRefs: ["ev-public-identity", "memory-guardrail"],
       },
@@ -879,6 +897,8 @@ describe("OpenAI Mission Genesis", () => {
       {
         title: "Approve the Blaqbonez-centered Chanel narrative",
         ownerRole: "Artist / team",
+        workMode: "artist_action",
+        intent: "human_action",
         primaryCheckpointKey: "feature_builds_blaqbonez",
         purpose: "Separate Blaqbonez-owned leverage from Asake-led or song-only attention.",
         steps: [
@@ -888,6 +908,7 @@ describe("OpenAI Mission Genesis", () => {
         ],
         evidenceNeeded: ["Feature attachment map"],
         completionExpectation: "The team knows whether Chanel is building Blaqbonez-level leverage.",
+        completionMode: "result_note",
         riskIfLate: "The feature can grow while Blaqbonez's artist identity stays flat.",
         sourceRefs: ["ev-chanel", "ev-public-identity"],
       },

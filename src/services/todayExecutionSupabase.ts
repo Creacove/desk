@@ -55,7 +55,7 @@ export async function loadTodayExecutionProjection(
   const [taskResult, checkpointResult, questionResult, permissionResult, checkpointLinkResult] = await Promise.all([
     client
       .from("tasks")
-      .select("id,mission_id,mission_plan_version_id,primary_checkpoint_id,title,status,owner_role,work_mode,assignee_user_id,assignment_reason,assignment_version,purpose,deadline,available_from,estimated_minutes,priority,approval_state,dependency,risk_if_late,created_at")
+      .select("id,mission_id,mission_plan_version_id,primary_checkpoint_id,title,status,owner_role,work_mode,task_intent,readiness,review_target_id,review_target_type,review_target_version_id,review_target_status,assignee_user_id,assignment_reason,assignment_version,purpose,deadline,available_from,estimated_minutes,priority,approval_state,dependency,risk_if_late,created_at")
       .eq("account_id", workspace.accountId)
       .eq("artist_workspace_id", workspace.artistWorkspaceId)
       .eq("artist_id", workspace.artistId)
@@ -161,6 +161,9 @@ function readTask(row: Record<string, unknown>): TodayTaskState | null {
     status: text(row.status) || "proposed",
     ownerRole: optionalText(row.owner_role),
     workMode: optionalText(row.work_mode),
+    intent: optionalText(row.task_intent),
+    readiness: optionalText(row.readiness),
+    reviewTarget: readReviewTarget(row),
     assigneeUserId: row.assignee_user_id === null ? null : optionalText(row.assignee_user_id),
     assignmentReason: optionalText(row.assignment_reason),
     assignmentVersion: integer(row.assignment_version),
@@ -174,6 +177,15 @@ function readTask(row: Record<string, unknown>): TodayTaskState | null {
     riskIfLate: optionalText(row.risk_if_late),
     createdAt: optionalText(row.created_at),
   };
+}
+
+function readReviewTarget(row: Record<string, unknown>): TodayTaskState["reviewTarget"] {
+  const artifactId = optionalText(row.review_target_id);
+  const versionId = optionalText(row.review_target_version_id);
+  const artifactType = optionalText(row.review_target_type);
+  const status = optionalText(row.review_target_status);
+  if (!artifactId || !versionId || !artifactType || !status) return undefined;
+  return { artifactId, versionId, artifactType, status };
 }
 
 function readCheckpoint(row: Record<string, unknown>, orderById: Map<string, number>): TodayCheckpointState | null {

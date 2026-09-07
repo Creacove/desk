@@ -2718,7 +2718,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
 
         const { data: taskData, error: taskError } = await ownerFilters(client
           .from("tasks")
-          .select("id,mission_id,mission_plan_version_id,primary_checkpoint_id,title,status,owner_role,work_mode,assignee_user_id,assignment_reason,assignment_version,purpose,deadline,priority,approval_state,dependency,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
+          .select("id,mission_id,mission_plan_version_id,primary_checkpoint_id,title,status,owner_role,work_mode,task_intent,readiness,review_target_id,review_target_type,review_target_version_id,review_target_status,assignee_user_id,assignment_reason,assignment_version,purpose,deadline,priority,approval_state,dependency,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
         )
           .in("mission_id", missionRows.map((mission) => mission.id))
           .order("created_at", { ascending: true });
@@ -2757,7 +2757,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
             .order("created_at", { ascending: true }),
           ownerFilters(client
             .from("tasks")
-            .select("id,mission_id,mission_plan_version_id,primary_checkpoint_id,title,status,owner_role,work_mode,assignee_user_id,assignment_reason,assignment_version,purpose,deadline,priority,approval_state,dependency,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
+            .select("id,mission_id,mission_plan_version_id,primary_checkpoint_id,title,status,owner_role,work_mode,task_intent,readiness,review_target_id,review_target_type,review_target_version_id,review_target_status,assignee_user_id,assignment_reason,assignment_version,purpose,deadline,priority,approval_state,dependency,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
           )
             .eq("mission_id", missionId)
             .order("created_at", { ascending: true }),
@@ -2843,7 +2843,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
             .order("created_at", { ascending: true }),
           client
             .from("tasks")
-            .select("id,mission_id,mission_plan_version_id,primary_checkpoint_id,title,status,owner_role,work_mode,assignee_user_id,assignment_reason,assignment_version,purpose,deadline,priority,approval_state,dependency,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
+            .select("id,mission_id,mission_plan_version_id,primary_checkpoint_id,title,status,owner_role,work_mode,task_intent,readiness,review_target_id,review_target_type,review_target_version_id,review_target_status,assignee_user_id,assignment_reason,assignment_version,purpose,deadline,priority,approval_state,dependency,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
             .eq("artist_workspace_id", workspace.artistWorkspaceId)
             .order("created_at", { ascending: true }),
           client
@@ -2893,12 +2893,9 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         ));
       },
       async approveTask(taskId) {
-        const { error } = await client
-          .from("tasks")
-          .update({ approval_state: "approved", status: "approved" })
-          .eq("id", taskId)
-          .eq("artist_workspace_id", workspace.artistWorkspaceId);
-
+        const { error } = await client.rpc("approve_mission_review_task_v1", {
+          p_task_id: taskId,
+        });
         if (error) throw error;
       },
       async uploadTaskDeliverable(taskId, input) {
@@ -3315,6 +3312,12 @@ type TaskRow = {
   status: string;
   owner_role?: string | null;
   work_mode?: MissionTaskViewModel["workMode"] | null;
+  task_intent?: MissionTaskViewModel["intent"] | null;
+  readiness?: MissionTaskViewModel["readiness"] | null;
+  review_target_id?: string | null;
+  review_target_type?: NonNullable<MissionTaskViewModel["reviewTarget"]>["artifactType"] | null;
+  review_target_version_id?: string | null;
+  review_target_status?: NonNullable<MissionTaskViewModel["reviewTarget"]>["status"] | null;
   assignee_user_id?: string | null;
   assignment_reason?: string | null;
   assignment_version?: number | null;
@@ -6959,7 +6962,34 @@ function mapTaskApprovalState(state: string | null | undefined): MissionTaskView
   return "not_required";
 }
 
-function resolveTaskWorkMode(task: Pick<TaskRow, "work_mode" | "owner_role" | "completion_mode" | "user_responsibility">): NonNullable<MissionTaskViewModel["workMode"]> {
+function mapTaskIntent(value: string | null | undefined): MissionTaskViewModel["intent"] | undefined {
+  return value === "manager_work" || value === "human_action" || value === "collaborative_draft" || value === "review_approval"
+    ? value
+    : undefined;
+}
+
+function mapTaskReadiness(value: string | null | undefined): MissionTaskViewModel["readiness"] | undefined {
+  return value === "preparing" || value === "ready" || value === "needs_revision" || value === "completed" || value === "blocked"
+    ? value
+    : undefined;
+}
+
+function mapTaskReviewTarget(task: Pick<TaskRow, "review_target_id" | "review_target_type" | "review_target_version_id" | "review_target_status">): MissionTaskViewModel["reviewTarget"] | undefined {
+  if (!task.review_target_id || !task.review_target_version_id) return undefined;
+  if (task.review_target_type !== "manager_output" && task.review_target_type !== "song_document") return undefined;
+  if (task.review_target_status !== "draft" && task.review_target_status !== "ready_for_review" && task.review_target_status !== "accepted" && task.review_target_status !== "needs_revision") return undefined;
+  return {
+    artifactType: task.review_target_type,
+    artifactId: task.review_target_id,
+    versionId: task.review_target_version_id,
+    status: task.review_target_status,
+  };
+}
+
+function resolveTaskWorkMode(task: Pick<TaskRow, "work_mode" | "task_intent" | "owner_role" | "completion_mode" | "user_responsibility">): NonNullable<MissionTaskViewModel["workMode"]> {
+  if (task.task_intent === "manager_work") return "manager_work";
+  if (task.task_intent === "collaborative_draft") return "collaborative";
+  if (task.task_intent === "review_approval") return task.work_mode === "collaborative" ? "collaborative" : "artist_action";
   if (task.work_mode === "artist_action" || task.work_mode === "collaborative" || task.work_mode === "manager_work") return task.work_mode;
   if (task.completion_mode === "manager_draft") return "collaborative";
   const exactManagerOwner = task.owner_role?.trim().toLowerCase() === "manager";
@@ -6970,7 +7000,7 @@ function resolveTaskWorkMode(task: Pick<TaskRow, "work_mode" | "owner_role" | "c
   return "artist_action";
 }
 
-function isBlockingTask(task: Pick<TaskRow, "work_mode" | "owner_role" | "completion_mode" | "user_responsibility">) {
+function isBlockingTask(task: Pick<TaskRow, "work_mode" | "task_intent" | "owner_role" | "completion_mode" | "user_responsibility">) {
   return resolveTaskWorkMode(task) !== "manager_work";
 }
 
@@ -7014,6 +7044,10 @@ function missionFromRow(
         }
       : undefined;
 
+    const intent = mapTaskIntent(task.task_intent);
+    const readiness = mapTaskReadiness(task.readiness);
+    const reviewTarget = mapTaskReviewTarget(task);
+
     return {
       id: task.id,
       checkpointId: task.primary_checkpoint_id ?? "",
@@ -7024,6 +7058,9 @@ function missionFromRow(
       assignmentVersion: task.assignment_version ?? 0,
       deadline: task.deadline ? new Date(task.deadline).toLocaleDateString() : "Next review",
       approvalState: mapTaskApprovalState(task.approval_state),
+      ...(intent ? { intent } : {}),
+      ...(readiness ? { readiness } : {}),
+      ...(reviewTarget ? { reviewTarget } : {}),
       purpose: task.purpose ?? "",
       steps: taskSteps,
       evidenceIds: task.evidence_needed ?? [],

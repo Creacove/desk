@@ -160,6 +160,36 @@ describe("Today runtime projection", () => {
     expect(projection.primary?.cta).toBe("review");
   });
 
+  it("keeps a targetless review task out of Today until its draft is ready", () => {
+    const projection = projectTodayExecution(packet({
+      missions: [mission("m1", "Odaeshi", 1)],
+      tasks: [task("preparing-review", "m1", {
+        status: "needs_approval",
+        approvalState: "needs_approval",
+        intent: "review_approval",
+        readiness: "preparing",
+      })],
+    }));
+
+    expect(projection.primary).toBeUndefined();
+    expect(projection.supporting).toHaveLength(0);
+  });
+
+  it("surfaces a versioned ready review as an owner review action", () => {
+    const projection = projectTodayExecution(packet({
+      missions: [mission("m1", "Odaeshi", 1)],
+      tasks: [task("ready-review", "m1", {
+        status: "needs_approval",
+        approvalState: "needs_approval",
+        intent: "review_approval",
+        readiness: "ready",
+        reviewTarget: { artifactType: "manager_output", artifactId: "draft-1", versionId: "draft-1", status: "ready_for_review" },
+      })],
+    }));
+
+    expect(projection.primary).toMatchObject({ id: "ready-review", kind: "permission", cta: "review" });
+  });
+
   it("does not show a watch as competing work for a Mission that already needs the artist", () => {
     const projection = projectTodayExecution(packet({
       missions: [mission("m1", "Odaeshi", 1)],

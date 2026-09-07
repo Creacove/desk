@@ -153,8 +153,8 @@ describe("OpenAI Manager Conversation Router", () => {
       expect(functionSource).toContain(`selectMany(db, "${table}"`);
     }
     expect(functionSource).toContain("selectConversationHistory");
-    expect(functionSource).toContain("owner_role,work_mode,status");
-    expect(streamFunctionSource).toContain("owner_role,work_mode,status");
+    expect(functionSource).toContain("owner_role,work_mode,task_intent,readiness");
+    expect(streamFunctionSource).toContain("owner_role,work_mode,task_intent,readiness");
     expect(functionSource).not.toContain('selectMany(db, "conversation_messages"');
   });
 
@@ -448,6 +448,7 @@ describe("OpenAI Manager Conversation Router", () => {
               scheduleKey: "content_rollout_start",
               ownerRole: "Manager",
               workMode: "collaborative",
+              intent: "collaborative_draft",
               primaryCheckpointKey: "london_return_signal",
               purpose: "Create the baseline needed to judge whether attention is becoming durable.",
               steps: ["Pull London streaming data for the last 30 days.", "Record the baseline and review threshold."],

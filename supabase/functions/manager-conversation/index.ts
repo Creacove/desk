@@ -590,7 +590,7 @@ async function buildManagerConversationPacket(
     selectMany(db, "memory_entries", "id,scope,kind,content,source_type,confidence,reason,mission_id,conversation_id,created_at", input, 12),
     selectMany(db, "agent_reports", "id,agent_key,mission_id,mission_pattern_key,summary,confidence,limitations,finding,evidence_missing,risk_or_opportunity,recommended_internal_action,permission_required,suggested_follow_up,created_at", input, 8),
     selectMany(db, "missions", "id,title,objective,reason,status,priority,progress,summary,pattern_name,current_recommendation,required_evidence,missing_evidence,change_conditions,review_point,created_at", input, 12),
-    selectMany(db, "tasks", "id,mission_id,primary_checkpoint_id,title,owner_role,work_mode,status,purpose,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late", input, 20),
+    selectMany(db, "tasks", "id,mission_id,primary_checkpoint_id,title,owner_role,work_mode,task_intent,readiness,review_target_id,review_target_type,review_target_version_id,review_target_status,status,purpose,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late", input, 20),
     selectMany(db, "conversations", "id,topic,status,summary,last_update_at,created_at", input, 12),
     selectConversationHistory(db, input, conversationId, 12),
     selectMany(db, "manager_intelligence_packets", "id,packet_type,profile_projection_json,signal_snapshot_json,strategic_diagnosis_json,asset_reads_json,market_reads_json,mission_seed_json,conversation_memory_seed_json,supporting_evidence_json,internal_only_json,created_at", input, 1),
@@ -872,47 +872,29 @@ async function persistTaskDraftOutput(
 ) {
   if (!input.taskId || output.contextQuestions.length) return null;
   const { data: task, error: taskError } = await db.from("tasks")
-    .select("id,mission_id,title,completion_mode,deliverable_title,deliverable_requirements,completion_expectation")
+    .select("id,mission_id,title,task_intent,completion_mode,deliverable_title,deliverable_requirements,completion_expectation")
     .eq("id", input.taskId)
     .eq("account_id", input.accountId)
     .eq("artist_workspace_id", input.artistWorkspaceId)
     .eq("artist_id", input.artistId)
     .maybeSingle();
   if (taskError) throw taskError;
-  if (!task || task.completion_mode !== "manager_draft") return null;
-
-  const { data: current, error: currentError } = await db.from("manager_outputs")
-    .select("id")
-    .eq("artist_workspace_id", input.artistWorkspaceId)
-    .eq("output_type", "task_draft")
-    .eq("subject_type", "task")
-    .eq("subject_id", input.taskId)
-    .eq("is_current", true)
-    .maybeSingle();
-  if (currentError) throw currentError;
-  if (current?.id) {
-    const { error } = await db.from("manager_outputs").update({ is_current: false }).eq("id", current.id);
-    if (error) throw error;
-  }
+  if (!task || (task.completion_mode !== "manager_draft" && task.task_intent !== "review_approval")) return null;
 
   const title = task.deliverable_title || task.title;
-  const { data: draft, error: draftError } = await db.from("manager_outputs").insert({
-    account_id: input.accountId,
-    artist_workspace_id: input.artistWorkspaceId,
-    artist_id: input.artistId,
-    conversation_id: conversationId,
-    mission_id: task.mission_id,
-    subject_type: "task",
-    subject_id: input.taskId,
-    output_type: "task_draft",
-    dominant_situation: "task_completion",
-    layout_pattern: "working_draft",
-    tone: "direct",
-    summary: output.summary,
-    primary_recommendation_json: { recommendation: output.responseBody },
-    confidence_json: { confidence: output.confidence },
-    supporting_evidence_json: output.evidenceIds.map((id) => ({ id })),
-    render_json: {
+  const { data: persistedDraft, error: draftError } = await db.rpc("persist_manager_task_draft_v1", {
+    p_account_id: input.accountId,
+    p_artist_workspace_id: input.artistWorkspaceId,
+    p_artist_id: input.artistId,
+    p_task_id: input.taskId,
+    p_conversation_id: conversationId,
+    p_created_from_run_id: runId,
+    p_title: title,
+    p_summary: output.summary,
+    p_primary_recommendation_json: { recommendation: output.responseBody },
+    p_confidence_json: { confidence: output.confidence },
+    p_supporting_evidence_json: output.evidenceIds.map((id) => ({ id })),
+    p_render_json: {
       title,
       content: output.responseBody,
       status: "draft",
@@ -922,23 +904,11 @@ async function persistTaskDraftOutput(
       evidenceIds: output.evidenceIds,
       conversationId,
     },
-    supersedes_output_id: current?.id ?? null,
-    is_current: true,
-    created_from_run_id: runId,
-  }).select("id").single();
-  if (draftError) throw draftError;
-
-  const { error: linkError } = await db.from("artifact_links").insert({
-    account_id: input.accountId,
-    artist_workspace_id: input.artistWorkspaceId,
-    artist_id: input.artistId,
-    source_type: "manager_output",
-    source_id: draft.id,
-    target_type: "task",
-    target_id: input.taskId,
-    relationship: "response_to",
   });
-  if (linkError) throw linkError;
+  if (draftError) throw draftError;
+  if (!isRecord(persistedDraft) || typeof persistedDraft.artifactId !== "string" || !persistedDraft.artifactId) {
+    throw new Error("Manager draft was not saved as a reviewable version.");
+  }
 
   await writeWorkspaceEvent(db, {
     accountId: input.accountId,
@@ -948,7 +918,7 @@ async function persistTaskDraftOutput(
     summary: `${title} is ready to review.`,
     targetType: "task",
     targetId: input.taskId,
-    dedupeKey: `manager-task-draft:${draft.id}`,
+    dedupeKey: `manager-task-draft:${persistedDraft.artifactId}`,
     displayMode: "toast",
     refreshScope: ["missions", "activity"],
   });
@@ -959,10 +929,10 @@ async function persistTaskDraftOutput(
     title,
     body: "Manager draft saved to this task. Open the task to review or submit this version.",
     content: output.responseBody,
-    managerOutputId: draft.id,
+    managerOutputId: persistedDraft.artifactId,
     id: input.taskId,
     parentMissionId: task.mission_id ?? undefined,
-    status: current?.id ? "updated" as const : "created" as const,
+    status: persistedDraft.status === "already_saved" ? "updated" as const : "created" as const,
   };
 }
 

@@ -154,6 +154,7 @@ jobs:
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/structured_campaign_documents_smoke.sql
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/song_document_approval_smoke.sql
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/rls_isolation_smoke.sql
+          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/generic_mission_task_contract_smoke.sql
           node scripts/test-team-database.mjs --target local --docker-container "$DB_CONTAINER"
 
       - name: Stop local Supabase

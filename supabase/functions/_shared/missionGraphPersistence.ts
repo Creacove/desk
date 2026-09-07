@@ -5,6 +5,7 @@ import type {
 } from "./openaiManagerConversation.ts";
 import { loadActiveWorkspaceRoster, type WorkspaceRoster } from "./workspaceRoster.ts";
 import { normalizeTaskAssignment } from "./taskAssignment.ts";
+import { normalizeMissionTask } from "./missionTaskContract.ts";
 
 type MissionGraphInput = {
   accountId: string;
@@ -310,6 +311,12 @@ async function writeMissionPlan(
   }
 
   for (const task of decision.tasks) {
+    if (task.intent === "review_approval") {
+      throw new Error("Mission Genesis cannot create an approval task before a runtime artifact has a ready immutable version.");
+    }
+    if (task.intent === "manager_work") {
+      throw new Error("Mission Genesis cannot expose Manager work as a human task.");
+    }
     const assignment = normalizeTaskAssignment(task, { roster, teamEnabled }, task.workMode);
     const checkpointId = checkpointIds.get(task.primaryCheckpointKey);
     if (!checkpointId) throw new Error(`Manager mission graph task references missing checkpoint: ${task.primaryCheckpointKey}`);
@@ -324,7 +331,17 @@ async function writeMissionPlan(
       title: task.title,
       schedule_key: task.scheduleKey || null,
       owner_role: task.ownerRole || "Manager",
+      // The row is staged as Manager-owned until task_steps have been written
+      // in this HTTP workflow. The intent becomes the generated task contract
+      // in activateHumanTask below; a crash cannot expose half-written human
+      // work as executable Today work.
       work_mode: "manager_work",
+      task_intent: "manager_work",
+      readiness: "ready",
+      review_target_id: null,
+      review_target_type: null,
+      review_target_version_id: null,
+      review_target_status: null,
       assignee_user_id: null,
       assignment_reason: null,
       assignment_source: null,
@@ -366,7 +383,7 @@ async function writeMissionPlan(
       if (stepError) throw stepError;
     }
 
-    await activateHumanTask(db, taskRow.id, task.workMode, assignment);
+    await activateHumanTask(db, taskRow.id, task.workMode, task.intent, assignment);
   }
 
   for (const permission of decision.permissionRequests) {
@@ -421,6 +438,7 @@ async function preflightMissionTasks(
 ) {
   for (const task of decisions.flatMap((decision) => decision.tasks)) {
     if (task.workMode === "manager_work") continue;
+    const normalizedTask = normalizeMissionTask(task);
     const { error } = await db.rpc("assert_generated_human_task_execution_contract_v1", {
       p_task: {
         scope: "mission",
@@ -428,10 +446,12 @@ async function preflightMissionTasks(
         createdFromRunId: context.runId,
         title: task.title,
         ownerRole: task.ownerRole,
-        workMode: task.workMode,
+        workMode: normalizedTask.workMode,
+        taskIntent: normalizedTask.intent,
+        readiness: normalizedTask.readiness,
         purpose: task.purpose,
         completionExpectation: task.completionExpectation,
-        completionMode: task.completionMode,
+        completionMode: normalizedTask.completionMode,
         managerResponsibility: task.managerResponsibility,
         userResponsibility: task.userResponsibility,
         riskIfLate: task.riskIfLate,
@@ -442,11 +462,20 @@ async function preflightMissionTasks(
   }
 }
 
-async function activateHumanTask(db: any, taskId: string, workMode: string, assignment: ReturnType<typeof normalizeTaskAssignment>) {
+async function activateHumanTask(
+  db: any,
+  taskId: string,
+  workMode: string,
+  intent: "human_action" | "collaborative_draft",
+  assignment: ReturnType<typeof normalizeTaskAssignment>,
+) {
   if (workMode === "manager_work") return;
   const { error } = await db.from("tasks")
     .update({
       work_mode: workMode,
+      task_intent: intent,
+      readiness: intent === "collaborative_draft" ? "preparing" : "ready",
+      status: intent === "collaborative_draft" ? "in_progress" : "proposed",
       assignee_user_id: assignment.assigneeUserId,
       assignment_reason: assignment.assignmentReason,
       assignment_source: assignment.assignmentSource,

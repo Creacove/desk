@@ -30,6 +30,12 @@ type TaskRow = {
   title: string;
   owner_role: string | null;
   work_mode: string | null;
+  task_intent: string | null;
+  readiness: string | null;
+  review_target_id: string | null;
+  review_target_type: string | null;
+  review_target_version_id: string | null;
+  review_target_status: string | null;
   status: string;
   approval_state: string;
   purpose: string | null;
@@ -90,6 +96,8 @@ Deno.serve(withAppErrorCapture("manager-task-execution", async (request) => {
     return json({ error: message === "TEAM_CONFLICT" ? "This task changed. Refresh and try again." : "You cannot act on this task." }, message === "TEAM_CONFLICT" ? 409 : 403);
   }
 
+  const readinessConflict = taskReadinessConflict(task);
+  if (readinessConflict) return json({ error: readinessConflict }, 409);
   assertHumanExecutableTask(task);
   if (TERMINAL_TASK_STATUSES.has(task.status)) {
     return json({ error: "This task is no longer active. Refresh the Mission and use the current work." }, 409);
@@ -116,6 +124,9 @@ function validateInput(input: TaskExecutionInput) {
 }
 
 function assertHumanExecutableTask(task: TaskRow) {
+  if (String(task.task_intent ?? "").trim().toLowerCase() === "review_approval") {
+    throw new Error("Review tasks cannot be started as human work.");
+  }
   const workMode = String(task.work_mode ?? "").trim().toLowerCase();
   const owner = String(task.owner_role ?? "").trim().toLowerCase();
   if (workMode === "manager_work" || (!workMode && MANAGER_OWNERS.has(owner))) {
@@ -125,11 +136,32 @@ function assertHumanExecutableTask(task: TaskRow) {
 
 async function loadTask(db: any, taskId: string): Promise<TaskRow | null> {
   const { data, error } = await db.from("tasks")
-    .select("id,account_id,artist_workspace_id,artist_id,mission_id,mission_plan_version_id,primary_checkpoint_id,title,owner_role,work_mode,status,approval_state,purpose,dependency,deadline,available_from,estimated_minutes,risk_if_late")
+    .select("id,account_id,artist_workspace_id,artist_id,mission_id,mission_plan_version_id,primary_checkpoint_id,title,owner_role,work_mode,task_intent,readiness,review_target_id,review_target_type,review_target_version_id,review_target_status,status,approval_state,purpose,dependency,deadline,available_from,estimated_minutes,risk_if_late")
     .eq("id", taskId)
     .maybeSingle();
   if (error) throw error;
   return data as TaskRow | null;
+}
+
+function taskReadinessConflict(task: TaskRow) {
+  const intent = String(task.task_intent ?? "").trim().toLowerCase();
+  const readiness = String(task.readiness ?? "").trim().toLowerCase();
+  if (intent === "review_approval") {
+    if (readiness !== "ready"
+      || task.status !== "needs_approval"
+      || task.approval_state !== "needs_approval"
+      || !task.review_target_id
+      || !task.review_target_version_id
+      || task.review_target_status !== "ready_for_review") {
+      return "This review is still being prepared. Refresh in a moment.";
+    }
+    return "Review tasks cannot be started as human work.";
+  }
+  if (intent === "collaborative_draft" && readiness === "preparing") {
+    return "The Manager is preparing this draft. Refresh in a moment.";
+  }
+  if (readiness === "blocked") return "This task is blocked. Resolve the blocker or move the work first.";
+  return null;
 }
 
 async function startTask(db: any, task: TaskRow, userId: string) {

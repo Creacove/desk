@@ -51,13 +51,13 @@ describe("Manager intelligence V1 architecture", () => {
       expect(source).toContain("taskId?: string");
       expect(source).toContain("ensureTaskConversation");
       expect(source).toContain("persistTaskDraftOutput");
-      expect(source).toContain('output_type: "task_draft"');
+      expect(source).toContain('rpc("persist_manager_task_draft_v1"');
       expect(source).toContain("reasoningEffort: managerReasoningEffort(turn.mode)");
       expect(source).toContain("selectConversationHistory");
       expect(source).toContain("input.taskId ? [] : await persistManagerMissionGraphDecisions");
       expect(source).toContain('artifactKind: "task_draft"');
       expect(source).toContain("content: output.responseBody");
-      expect(source).toContain("managerOutputId: draft.id");
+      expect(source).toContain("managerOutputId: persistedDraft.artifactId");
     }
   });
 

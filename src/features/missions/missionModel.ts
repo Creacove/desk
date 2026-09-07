@@ -3,6 +3,8 @@ import type {
   MissionEventViewModel,
   MissionNoteViewModel,
   MissionTaskDeliverableViewModel,
+  MissionTaskIntent,
+  MissionTaskReviewTarget,
   MissionTaskViewModel,
   MissionViewModel,
 } from "../../types/cleanProduction";
@@ -98,11 +100,11 @@ export function getNextArtistTask(tasks: MissionTaskViewModel[], checkpoints: Mi
 }
 
 export function isOpenArtistTask(task: MissionTaskViewModel) {
-  return resolveTaskWorkMode(task) !== "manager_work" && !taskIsDone(task);
+  return resolveTaskWorkMode(task) !== "manager_work" && !isTaskPreparing(task) && !taskIsDone(task);
 }
 
 export function taskIsDone(task: MissionTaskViewModel) {
-  return task.result?.status === "completed";
+  return task.result?.status === "completed" || task.readiness === "completed" || task.approvalState === "approved";
 }
 
 export function isTaskOptimisticallyDone(task: MissionTaskViewModel, optimisticCompleted: string[]) {
@@ -110,9 +112,43 @@ export function isTaskOptimisticallyDone(task: MissionTaskViewModel, optimisticC
 }
 
 export function resolveTaskWorkMode(task: MissionTaskViewModel) {
+  const intent = resolveTaskIntent(task);
+  if (intent === "manager_work") return "manager_work" as const;
+  if (intent === "collaborative_draft") return "collaborative" as const;
+  if (intent === "review_approval") return task.workMode === "collaborative" ? "collaborative" as const : "artist_action" as const;
   if (task.workMode) return task.workMode;
   if (task.completionMode === "manager_draft") return "collaborative" as const;
   return task.owner.trim().toLowerCase() === "manager" ? "manager_work" as const : "artist_action" as const;
+}
+
+/**
+ * Intent is the task contract. The fallback exists for rows written before
+ * the contract migration and deliberately never inspects generated copy.
+ */
+export function resolveTaskIntent(task: MissionTaskViewModel): MissionTaskIntent {
+  if (task.intent) return task.intent;
+  if (task.workMode === "manager_work" || task.owner.trim().toLowerCase() === "manager") return "manager_work";
+  if (task.completionMode === "manager_draft" || task.workMode === "collaborative") return "collaborative_draft";
+  return "human_action";
+}
+
+export function isReviewTargetReady(target: MissionTaskReviewTarget | undefined) {
+  return Boolean(target?.artifactId && target.versionId && target.status === "ready_for_review");
+}
+
+/** A review task is actionable only when the server has attached a ready version. */
+export function isReviewTaskReady(task: MissionTaskViewModel) {
+  return task.intent === "review_approval"
+    && task.readiness === "ready"
+    && task.approvalState === "needs approval"
+    && isReviewTargetReady(task.reviewTarget);
+}
+
+/** Preparing work belongs to Desk until its artifact can be reviewed. */
+export function isTaskPreparing(task: MissionTaskViewModel) {
+  const intent = resolveTaskIntent(task);
+  if (intent === "review_approval") return !isReviewTaskReady(task);
+  return intent === "collaborative_draft" && task.readiness === "preparing";
 }
 
 export function resolveTaskCompletionMode(task: MissionTaskViewModel) {
@@ -183,6 +219,12 @@ export function managerDraftNeedsRevision(task: MissionTaskViewModel) {
 }
 
 export function getTaskPrimaryLabel(task: MissionTaskViewModel, approved: boolean) {
+  if (task.intent === "review_approval") {
+    if (!isReviewTaskReady(task)) return "Draft is being prepared";
+    if (!approved) return "Review draft";
+    return "Approved";
+  }
+  if (task.intent === "collaborative_draft" && task.readiness === "preparing") return "Draft is being prepared";
   if (task.approvalState === "needs approval" && !approved) return "Review & approve";
   if (resolveTaskCompletionMode(task) === "manager_draft" && (!task.managerDraft || managerDraftNeedsRevision(task))) return "Work with Manager";
   if (resolveTaskCompletionMode(task) === "result_note") return "Add result";

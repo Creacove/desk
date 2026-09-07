@@ -429,6 +429,15 @@ export type MissionTaskDeliverableViewModel = {
   validationSummary?: string;
 };
 
+export type MissionTaskIntent = "manager_work" | "human_action" | "collaborative_draft" | "review_approval";
+export type MissionTaskReadiness = "preparing" | "ready" | "needs_revision" | "completed" | "blocked";
+export type MissionTaskReviewTarget = {
+  artifactType: "manager_output" | "song_document";
+  artifactId: string;
+  versionId?: string;
+  status: "draft" | "ready_for_review" | "accepted" | "needs_revision";
+};
+
 export type MissionTaskViewModel = {
   id: string;
   checkpointId: string;
@@ -439,12 +448,15 @@ export type MissionTaskViewModel = {
   assignmentVersion?: number;
   deadline: string;
   approvalState: "not_required" | "needs approval" | "approved" | "blocked" | "active";
+  intent?: MissionTaskIntent;
+  readiness?: MissionTaskReadiness;
+  reviewTarget?: MissionTaskReviewTarget;
   purpose: string;
   steps: string[];
   evidenceIds: string[];
   deliverables?: MissionTaskDeliverableViewModel[];
   workMode?: "artist_action" | "collaborative" | "manager_work";
-  completionMode?: "evidence" | "attestation" | "manager_draft";
+  completionMode?: "evidence" | "attestation" | "result_note" | "manager_draft" | "approval";
   completionExpectation?: string;
   deliverableTitle?: string;
   deliverableRequirements?: string[];

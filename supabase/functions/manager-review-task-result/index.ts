@@ -8,8 +8,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 import { assertWorkspaceOperation } from "../_shared/workspaceAuthorization.ts";
 import { buildManagerHumanTaskGenerationContract } from "../_shared/managerHumanTaskGenerationContract.ts";
+import { assertExecutableHumanTask } from "../_shared/managerTaskQuality.ts";
 import { normalizeHumanTaskAssignments, type TaskAssignmentContext } from "../_shared/taskAssignment.ts";
 import { loadActiveWorkspaceRoster } from "../_shared/workspaceRoster.ts";
+import { normalizeMissionTask } from "../_shared/missionTaskContract.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -46,6 +48,7 @@ type ManagerTaskReview = {
     purpose: string;
     ownerRole: string;
     workMode: "artist_action" | "collaborative";
+    intent: "human_action" | "collaborative_draft";
     steps: string[];
     evidenceNeeded: string[];
     completionExpectation: string;
@@ -218,7 +221,7 @@ async function loadReviewContext(db: any, input: ReviewInput, submittedByUserId:
 
   const { data: task, error: taskError } = await db
     .from("tasks")
-    .select("id,mission_id,primary_checkpoint_id,title,status,approval_state,owner_role,work_mode,purpose,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
+    .select("id,mission_id,primary_checkpoint_id,title,status,approval_state,task_intent,readiness,review_target_id,review_target_type,review_target_version_id,review_target_status,owner_role,work_mode,purpose,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
     .eq("id", input.taskId)
     .eq("artist_workspace_id", input.artistWorkspaceId)
     .eq("artist_id", input.artistId)
@@ -246,7 +249,7 @@ async function loadReviewContext(db: any, input: ReviewInput, submittedByUserId:
     selectMany(db, "artist_profiles", "id,display_name,genres,home_market,stage,current_goal,artist_direction,budget_context", input, 1),
     selectMission(db, input, task.mission_id),
     task.primary_checkpoint_id ? selectCheckpoint(db, input, task.primary_checkpoint_id) : null,
-    selectByMission(db, "tasks", "id,mission_id,primary_checkpoint_id,title,status,owner_role,work_mode,purpose,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late", input, task.mission_id, 80),
+    selectByMission(db, "tasks", "id,mission_id,primary_checkpoint_id,title,status,approval_state,task_intent,readiness,review_target_id,review_target_type,review_target_version_id,review_target_status,owner_role,work_mode,purpose,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late", input, task.mission_id, 80),
     selectMany(db, "task_steps", "id,task_id,order_index,body", input, 160),
     selectMany(db, "task_results", "id,task_id,mission_id,checkpoint_id,status,summary,user_note,manager_interpretation,mission_effect,recommended_follow_up,created_at", input, 80),
     findCompletedTaskResult(db, input),
@@ -254,11 +257,12 @@ async function loadReviewContext(db: any, input: ReviewInput, submittedByUserId:
     selectMany(db, "operating_events", "id,event_type,target_type,target_id,mission_id,checkpoint_id,task_id,summary,payload,created_at", input, 80),
     selectMany(db, "manager_intelligence_packets", "id,packet_type,profile_projection_json,strategic_diagnosis_json,mission_seed_json,conversation_memory_seed_json,supporting_evidence_json,created_at", input, 1),
     loadSubmittedDocuments(db, input),
-    loadSubmittedManagerDraft(db, input),
+    loadSubmittedManagerDraft(db, input, task.task_intent === "review_approval" ? task.review_target_id : undefined),
     loadTaskMusicPackage(db, input, task.mission_id),
   ]);
 
   assertTaskCanBeReviewed(task, Boolean(existingCompletedResult));
+  assertReviewTargetForSubmission(task, input, submittedManagerDraft);
   if (input.status === "completed" && ["needs_approval", "blocked", "rejected"].includes(String(task.approval_state ?? ""))) {
     throw new Error("This task requires approval before it can be completed.");
   }
@@ -300,6 +304,44 @@ async function loadReviewContext(db: any, input: ReviewInput, submittedByUserId:
     },
   };
   return { reviewContext, assignmentContext };
+}
+
+function assertReviewTargetForSubmission(
+  task: Record<string, unknown>,
+  input: ReviewInput,
+  submittedManagerDraft: Record<string, unknown> | null,
+) {
+  if (String(task.task_intent ?? "") !== "review_approval") return;
+
+  const ready = task.readiness === "ready"
+    && task.approval_state === "needs_approval"
+    && task.review_target_status === "ready_for_review"
+    && task.review_target_type
+    && task.review_target_id
+    && task.review_target_version_id
+    && task.completion_mode === "approval";
+  if (!ready) throw new Error("A review draft is not ready yet.");
+
+  const targetId = String(task.review_target_id);
+  const targetVersionId = String(task.review_target_version_id);
+  const submittedId = typeof input.managerOutputId === "string" && input.managerOutputId.trim()
+    ? input.managerOutputId.trim()
+    : "";
+  const draftId = submittedManagerDraft && typeof submittedManagerDraft.id === "string"
+    ? submittedManagerDraft.id
+    : "";
+  const isCurrent = submittedManagerDraft?.is_current === true;
+  if (!submittedManagerDraft) {
+    throw new Error("A review draft is not ready yet.");
+  }
+  if (!isCurrent || !draftId || draftId !== targetId || draftId !== targetVersionId || (submittedId && submittedId !== targetId)) {
+    throw new Error("The submitted Manager draft is not the current review version.");
+  }
+
+  // Approval review has its own owner-gated RPC. Keeping this endpoint for
+  // result-note submissions prevents a review task from being accidentally
+  // completed through the Manager synthesis path.
+  throw new Error("Review this draft with the approval action.");
 }
 
 function assertTaskCanBeReviewed(task: { status?: unknown }, hasCompletedResult: boolean) {
@@ -382,7 +424,7 @@ async function callOpenAIManagerReview(context: unknown, assignmentContext: Task
         "Return outcome accepted only when the completion contract is met, needs_revision when the same task should continue with concrete edits, or blocked when an external dependency prevents progress.",
         "After the final required task, choose met, needs_revision, or watching_signal and explain the decision through checkpointRecommendation.",
         "Do not create busywork. Add follow-up work only when the result changes what the mission needs next.",
-        "Every human follow-up must be immediately executable: provide at least two distinct ordered steps (at least four for content/video execution), a concrete completion expectation, the exact work Desk will do, the exact work the artist/team must do, and the risk of delay. Desk must complete the Manager responsibility itself; never assign research, analysis, drafting, interpretation, or planning back to the artist.",
+        "Every human follow-up must be immediately executable: declare intent human_action or collaborative_draft, provide at least two distinct ordered steps (at least four for content/video execution), a concrete completion expectation, the exact work Desk will do, the exact work the artist/team must do, and the risk of delay. Desk must complete the Manager responsibility itself; never assign research, analysis, drafting, interpretation, or planning back to the artist.",
         buildManagerHumanTaskGenerationContract(),
       ].join("\n"),
       input: JSON.stringify(context),
@@ -442,12 +484,13 @@ const reviewJsonSchema = {
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["title", "purpose", "ownerRole", "workMode", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "managerResponsibility", "userResponsibility", "riskIfLate", "estimatedMinutes", "assigneeUserId", "assignmentReason"],
+          required: ["title", "purpose", "ownerRole", "workMode", "intent", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "managerResponsibility", "userResponsibility", "riskIfLate", "estimatedMinutes", "assigneeUserId", "assignmentReason"],
           properties: {
             title: { type: "string" },
             purpose: { type: "string" },
             ownerRole: { type: "string" },
             workMode: { type: "string", enum: ["artist_action", "collaborative"] },
+            intent: { type: "string", enum: ["human_action", "collaborative_draft"] },
             steps: { type: "array", minItems: 2, maxItems: 8, items: { type: "string" } },
             evidenceNeeded: { type: "array", items: { type: "string" } },
             completionExpectation: { type: "string" },
@@ -485,16 +528,17 @@ async function applyManagerReview(db: any, input: ReviewInput, context: any, run
   const checkpointId = context.task.primary_checkpoint_id ?? null;
   const outcome = input.status === "blocked" ? "blocked" : review.outcome;
   const taskState = outcome === "accepted"
-    ? { status: "completed", resultStatus: "completed", eventType: "task_completed" }
+    ? { status: "completed", readiness: "completed", resultStatus: "completed", eventType: "task_completed" }
     : outcome === "needs_revision"
-      ? { status: "in_progress", resultStatus: "revised", eventType: "task_needs_revision" }
-      : { status: "blocked", resultStatus: "blocked", eventType: "task_blocked" };
+      ? { status: "in_progress", readiness: "needs_revision", resultStatus: "revised", eventType: "task_needs_revision" }
+      : { status: "blocked", readiness: "blocked", resultStatus: "blocked", eventType: "task_blocked" };
   const checkpointStatus = resolveCheckpointStatus(context, checkpointId, input.taskId, outcome, review.checkpointStatus);
 
   const { error: taskError } = await db
     .from("tasks")
     .update({
       status: taskState.status,
+      readiness: taskState.readiness,
       updated_at: now,
     })
     .eq("id", input.taskId)
@@ -711,6 +755,16 @@ async function preflightReviewContinuation(db: any, context: any, runId: string,
   for (const task of review.followUpTasks) {
     const owner = task.ownerRole.trim().toLowerCase();
     if (["manager", "desk", "ai", "ai manager"].includes(owner)) continue;
+    const normalizedTask = normalizeMissionTask({
+      title: task.title,
+      purpose: task.purpose,
+      steps: task.steps,
+      ownerRole: task.ownerRole,
+      workMode: task.workMode,
+      intent: task.intent,
+      completionMode: task.completionMode,
+    });
+    assertExecutableHumanTask(task);
     const { error } = await db.rpc("assert_generated_human_task_execution_contract_v1", {
       p_task: {
         scope: "mission",
@@ -718,10 +772,11 @@ async function preflightReviewContinuation(db: any, context: any, runId: string,
         createdFromRunId: runId,
         title: task.title,
         ownerRole: task.ownerRole,
-        workMode: task.workMode,
+        workMode: normalizedTask.workMode,
+        intent: normalizedTask.intent,
         purpose: task.purpose,
         completionExpectation: task.completionExpectation,
-        completionMode: task.completionMode,
+        completionMode: normalizedTask.completionMode,
         managerResponsibility: task.managerResponsibility,
         userResponsibility: task.userResponsibility,
         riskIfLate: task.riskIfLate,
@@ -844,11 +899,12 @@ async function markUsageFailedSafe(usageId: string, message: string) {
   }
 }
 
-async function loadSubmittedManagerDraft(db: any, input: ReviewInput) {
-  if (!input.managerOutputId) return null;
+async function loadSubmittedManagerDraft(db: any, input: ReviewInput, expectedManagerOutputId?: string | null) {
+  const managerOutputId = input.managerOutputId?.trim() || expectedManagerOutputId?.trim() || "";
+  if (!managerOutputId) return null;
   const { data, error } = await db.from("manager_outputs")
-    .select("id,subject_id,mission_id,summary,render_json,created_at")
-    .eq("id", input.managerOutputId)
+    .select("id,subject_id,mission_id,summary,render_json,is_current,created_at")
+    .eq("id", managerOutputId)
     .eq("account_id", input.accountId)
     .eq("artist_workspace_id", input.artistWorkspaceId)
     .eq("artist_id", input.artistId)
@@ -857,7 +913,14 @@ async function loadSubmittedManagerDraft(db: any, input: ReviewInput) {
     .eq("subject_id", input.taskId)
     .maybeSingle();
   if (error) throw error;
-  if (!data) throw new Error("The submitted Manager draft version was not found.");
+  // A review task can point at a version that was superseded or removed while
+  // a request was in flight. Return no draft so the review-target guard can
+  // fail closed with the same user-facing state as any other unavailable
+  // target; only an explicit, non-review submission gets the detailed error.
+  if (!data) {
+    if (expectedManagerOutputId && !input.managerOutputId?.trim()) return null;
+    throw new Error("The submitted Manager draft version was not found.");
+  }
   return data;
 }
 
@@ -1064,6 +1127,7 @@ function normalizeReview(raw: string): ManagerTaskReview {
       purpose: readString(item.purpose, ""),
       ownerRole: readString(item.ownerRole, "Manager"),
       workMode: readEnum(item.workMode, ["artist_action", "collaborative"], "collaborative"),
+      intent: readRequiredEnum(item.intent, ["human_action", "collaborative_draft"], "followUpTasks.intent"),
       steps: readStringArray(item.steps).slice(0, 8),
       evidenceNeeded: readStringArray(item.evidenceNeeded).slice(0, 8),
       completionExpectation: readString(item.completionExpectation, ""),
@@ -1116,6 +1180,11 @@ function readStringArray(value: unknown) {
 
 function readEnum<T extends string>(value: unknown, allowed: T[], fallback: T): T {
   return allowed.includes(value as T) ? value as T : fallback;
+}
+
+function readRequiredEnum<T extends string>(value: unknown, allowed: T[], field: string): T {
+  if (allowed.includes(value as T)) return value as T;
+  throw new Error(`Manager task review returned an invalid ${field}.`);
 }
 
 function clampProgress(value: number) {

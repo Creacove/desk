@@ -60,6 +60,7 @@ function missionOutput(steps: string[]) {
         scheduleKey: "",
         ownerRole: "Artist",
         workMode: "artist_action",
+        intent: "human_action",
         primaryCheckpointKey: "content_signal",
         purpose: "Run one prepared content test and return an observable result.",
         steps,

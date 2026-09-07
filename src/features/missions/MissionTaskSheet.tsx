@@ -13,8 +13,11 @@ import {
   type CompletionIntent,
   type TaskMutationState,
   humanDeliverableStatus,
+  isReviewTaskReady,
+  isTaskPreparing,
   managerDraftNeedsRevision,
   resolveTaskCompletionMode,
+  resolveTaskIntent,
   resolveTaskWorkMode,
 } from "./missionModel";
 
@@ -66,7 +69,11 @@ export function TaskSheet({
   const [uploadTargetId, setUploadTargetId] = useState<string | null>(null);
 
   const workMode = resolveTaskWorkMode(task);
+  const taskIntent = resolveTaskIntent(task);
   const completionMode = resolveTaskCompletionMode(task);
+  const reviewReady = isReviewTaskReady(task);
+  const preparing = isTaskPreparing(task);
+  const reviewApproved = taskIntent === "review_approval" && approved;
   const pending = mutation?.status === "pending";
   const executionStatus = executionState?.status ?? "";
   const blocked = executionState
@@ -278,10 +285,17 @@ export function TaskSheet({
             <div className="mt-7 rounded-[14px] bg-foreground/[0.035] px-4 py-4">
               <p className="text-[13px] font-semibold text-foreground">Waiting for owner approval.</p>
             </div>
-          ) : done ? (
+          ) : done || reviewApproved ? (
             <div className="mt-7 flex min-h-12 items-center gap-2 rounded-[14px] bg-brand-accent/[0.07] px-4 text-[13px] font-semibold text-brand-accent">
               <Check className="h-4 w-4" />
-              Done
+              {reviewApproved ? "Approved" : "Done"}
+            </div>
+          ) : preparing ? (
+            <div data-testid="mission-task-preparing" className="mt-7 rounded-[14px] bg-foreground/[0.035] px-4 py-4">
+              <p className="text-[13px] font-semibold text-foreground">Draft is being prepared</p>
+              <p className="mt-1 text-[12px] font-medium leading-relaxed text-muted-foreground">
+                The Manager is finishing this. You’ll be able to review it here when it’s ready.
+              </p>
             </div>
           ) : unavailable ? (
             <div className="mt-7 border-t border-foreground/8 pt-5">
@@ -366,7 +380,22 @@ export function TaskSheet({
             </div>
           ) : (
             <div className="mt-7 grid gap-2 border-t border-foreground/8 pt-5">
-              {task.approvalState === "needs approval" && !approved && canApproveTask ? (
+              {taskIntent === "review_approval" && reviewReady && !approved && canApproveTask ? (
+                <>
+                  <Button type="button" size="lg" onClick={onApprove} pending={pending} className="w-full">
+                    Review draft
+                  </Button>
+                  {onWorkWithManager ? (
+                    <Button type="button" variant="secondary" size="lg" onClick={onWorkWithManager} disabled={pending} className="w-full">
+                      Ask for a change
+                    </Button>
+                  ) : null}
+                </>
+              ) : taskIntent === "collaborative_draft" && completionMode === "manager_draft" && (!task.managerDraft || managerDraftNeedsRevision(task)) ? (
+                <Button type="button" size="lg" onClick={onWorkWithManager} disabled={pending} className="w-full">
+                  Work with Manager
+                </Button>
+              ) : task.approvalState === "needs approval" && !approved && canApproveTask ? (
                 <Button type="button" size="lg" onClick={onApprove} pending={pending} className="w-full">
                   Approve
                 </Button>

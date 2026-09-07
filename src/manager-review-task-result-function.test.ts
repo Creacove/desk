@@ -125,6 +125,16 @@ describe("Manager task-result review function", () => {
     expect(functionSource).toContain("no durable result");
   });
 
+  it("validates the exact review target before accepting a draft result", () => {
+    expect(functionSource).toContain("task_intent");
+    expect(functionSource).toContain("review_target_id");
+    expect(functionSource).toContain("review_target_version_id");
+    expect(functionSource).toContain("review_target_status");
+    expect(functionSource).toContain("The submitted Manager draft is not the current review version.");
+    expect(functionSource).toContain("A review draft is not ready yet.");
+    expect(functionSource).toContain("needs_revision");
+  });
+
   it("makes duplicate clicks and concurrent retries idempotent instead of starting another model run", () => {
     expect(functionSource).toContain("TaskReviewAlreadyRunningError");
     expect(functionSource).toContain("manager_task_result_one_running_review_idx");

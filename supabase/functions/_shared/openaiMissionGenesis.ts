@@ -1,5 +1,11 @@
 import { buildManagerHumanTaskGenerationContract } from "./managerHumanTaskGenerationContract.ts";
 import { assertExecutableHumanTask } from "./managerTaskQuality.ts";
+import {
+  normalizeMissionTask,
+  type MissionTaskIntent,
+  type MissionTaskReadiness,
+  type ReviewTargetInput,
+} from "./missionTaskContract.ts";
 
 export type MissionGenesisMode = "initial" | "continuation";
 
@@ -46,6 +52,9 @@ export type MissionGenesisTask = {
   scheduleKey?: string;
   ownerRole: string;
   workMode: "artist_action" | "collaborative" | "manager_work";
+  intent: MissionTaskIntent;
+  readiness?: MissionTaskReadiness;
+  reviewTarget?: ReviewTargetInput;
   assigneeUserId: string | null;
   assignmentReason: string | null;
   primaryCheckpointKey: string;
@@ -53,7 +62,7 @@ export type MissionGenesisTask = {
   steps: string[];
   evidenceNeeded: string[];
   completionExpectation: string;
-  completionMode: "result_note" | "manager_draft" | "evidence";
+  completionMode: "result_note" | "manager_draft" | "evidence" | "approval";
   deliverableTitle: string;
   deliverableRequirements: string[];
   managerResponsibility: string;
@@ -221,12 +230,25 @@ export const missionGenesisJsonSchema = {
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["title", "ownerRole", "workMode", "assigneeUserId", "assignmentReason", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "deadline", "sourceRefs"],
+          required: ["title", "ownerRole", "workMode", "intent", "assigneeUserId", "assignmentReason", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "deadline", "sourceRefs"],
           properties: {
             title: { type: "string" },
             scheduleKey: { type: "string" },
             ownerRole: { type: "string" },
             workMode: { type: "string", enum: ["artist_action", "collaborative", "manager_work"] },
+            intent: { type: "string", enum: ["manager_work", "human_action", "collaborative_draft", "review_approval"] },
+            readiness: { type: "string", enum: ["preparing", "ready", "needs_revision", "completed", "blocked"] },
+            reviewTarget: {
+              type: ["object", "null"],
+              additionalProperties: false,
+              required: ["artifactType", "artifactId", "status"],
+              properties: {
+                artifactType: { type: "string", enum: ["manager_output", "song_document"] },
+                artifactId: { type: "string" },
+                versionId: { type: ["string", "null"] },
+                status: { type: "string", enum: ["draft", "ready_for_review", "accepted", "needs_revision"] },
+              },
+            },
             assigneeUserId: { type: ["string", "null"] },
             assignmentReason: { type: ["string", "null"] },
             primaryCheckpointKey: { type: "string" },
@@ -234,7 +256,7 @@ export const missionGenesisJsonSchema = {
             steps: { type: "array", minItems: 2, maxItems: 6, items: { type: "string" } },
             evidenceNeeded: stringArraySchema,
             completionExpectation: { type: "string" },
-            completionMode: { type: "string", enum: ["result_note", "manager_draft", "evidence"] },
+            completionMode: { type: "string", enum: ["result_note", "manager_draft", "evidence", "approval"] },
             deliverableTitle: { type: "string" },
             deliverableRequirements: stringArraySchema,
             managerResponsibility: { type: "string" },
@@ -333,12 +355,26 @@ export const missionGenesisJsonSchema = {
               items: {
                 type: "object",
                 additionalProperties: false,
-                required: ["title", "ownerRole", "workMode", "assigneeUserId", "assignmentReason", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "deadline", "sourceRefs"],
+                required: ["title", "ownerRole", "workMode", "intent", "assigneeUserId", "assignmentReason", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "deadline", "sourceRefs"],
                 properties: {
                   title: { type: "string" },
                   scheduleKey: { type: "string" },
                   ownerRole: { type: "string" },
                   workMode: { type: "string", enum: ["artist_action", "collaborative", "manager_work"] },
+                  intent: { type: "string", enum: ["manager_work", "human_action", "collaborative_draft", "review_approval"] },
+                  readiness: { type: "string", enum: ["preparing", "ready", "needs_revision", "completed", "blocked"] },
+                  reviewTarget: {
+                    type: ["object", "null"],
+                    additionalProperties: false,
+                    required: ["artifactType", "artifactId", "status"],
+                    properties: {
+                      artifactType: { type: "string", enum: ["manager_output", "song_document"] },
+                      artifactId: { type: "string" },
+                      versionId: { type: ["string", "null"] },
+                      status: { type: "string", enum: ["draft", "ready_for_review", "accepted", "needs_revision"] },
+                    },
+                  },
+
                   assigneeUserId: { type: ["string", "null"] },
                   assignmentReason: { type: ["string", "null"] },
                   primaryCheckpointKey: { type: "string" },
@@ -346,7 +382,7 @@ export const missionGenesisJsonSchema = {
                   steps: { type: "array", minItems: 2, maxItems: 6, items: { type: "string" } },
                   evidenceNeeded: stringArraySchema,
                   completionExpectation: { type: "string" },
-                  completionMode: { type: "string", enum: ["result_note", "manager_draft", "evidence"] },
+                  completionMode: { type: "string", enum: ["result_note", "manager_draft", "evidence", "approval"] },
                   deliverableTitle: { type: "string" },
                   deliverableRequirements: stringArraySchema,
                   managerResponsibility: { type: "string" },
@@ -413,7 +449,7 @@ const sharedInstructions = [
   "Visible task steps must be human-facing only. Do not write system-support instructions such as retrieving the packet, attaching evidence refs, referencing mission.sourceRefs, or populating permission request queues.",
   "Every task must include 2–6 sequential human-facing steps that express the executable brief. Do not pad a simple approval or declaration merely to make it longer, and do not use step count or verbosity as a substitute for the semantic Task generation contract above.",
   "Every task must reference a checkpoint key. Every checkpoint must have a decision rule. Use realistic timelines: weeks or months based on the actual scope of the work involved.",
-  "Every visible task must declare exactly one completionMode: result_note when the user can report an observable outcome or manager_draft when the Manager can prepare the substantive artifact in chat. The legacy evidence value exists for compatibility but must not be generated.",
+  "Every visible task must declare exactly one intent and completionMode. Use human_action with result_note when the artist or team reports an observable outcome, collaborative_draft with manager_draft when Desk prepares the substantive artifact in chat, and never emit review_approval until the runtime supplies a ready artifact target and immutable version. The legacy evidence value exists for compatibility but must not be generated.",
   "Every visible task must declare workMode: artist_action when the artist or team performs or reports the work, or collaborative when the artist/team and Manager build or approve it together. A manager_draft task must be collaborative. Do not generate manager_work tasks; put immediate Manager analysis in checkpoint.managerRead instead.",
   "Every task must state completionExpectation, deliverableRequirements, managerResponsibility, and userResponsibility so an independent artist knows what happens next without a meeting.",
   "Every task must include deadline as an ISO-8601 timestamp only when a confirmed operating date supports it; otherwise use an empty string. Never invent a deadline or imply a distributor, playlist, press, or collaborator commitment exists.",
@@ -759,6 +795,7 @@ function validateHumanTaskContract(tasks: MissionGenesisTask[], label: string) {
       throw new Error(`${label} returned a required upload even though uploads must remain optional context.`);
     }
     assertExecutableHumanTask(task);
+    normalizeMissionTask(task);
   }
 }
 
@@ -855,7 +892,10 @@ function readTasks(value: unknown): MissionGenesisTask[] {
     title: readString(item.title, "tasks.title", true),
     ...(typeof item.scheduleKey === "string" && item.scheduleKey.trim() ? { scheduleKey: item.scheduleKey.trim() } : {}),
     ownerRole: readString(item.ownerRole, "tasks.ownerRole", true),
-    workMode: readOptionalEnum(item.workMode, ["artist_action", "collaborative", "manager_work"], item.completionMode === "manager_draft" ? "collaborative" : "artist_action") as MissionGenesisTask["workMode"],
+    workMode: readEnum(item.workMode, ["artist_action", "collaborative", "manager_work"], "tasks.workMode") as MissionGenesisTask["workMode"],
+    intent: readEnum(item.intent, ["manager_work", "human_action", "collaborative_draft", "review_approval"], "tasks.intent") as MissionGenesisTask["intent"],
+    ...(typeof item.readiness === "string" && item.readiness.trim() ? { readiness: readEnum(item.readiness, ["preparing", "ready", "needs_revision", "completed", "blocked"], "tasks.readiness") as MissionGenesisTask["readiness"] } : {}),
+    ...(isRecord(item.reviewTarget) ? { reviewTarget: readReviewTarget(item.reviewTarget) } : {}),
     assigneeUserId: typeof item.assigneeUserId === "string" && item.assigneeUserId.trim() ? item.assigneeUserId.trim() : null,
     assignmentReason: typeof item.assignmentReason === "string" && item.assignmentReason.trim() ? item.assignmentReason.trim().slice(0, 240) : null,
     primaryCheckpointKey: readString(item.primaryCheckpointKey, "tasks.primaryCheckpointKey", true),
@@ -865,7 +905,7 @@ function readTasks(value: unknown): MissionGenesisTask[] {
     completionExpectation: typeof item.completionExpectation === "string" && item.completionExpectation.trim()
       ? item.completionExpectation.trim()
       : readString(item.purpose, "tasks.purpose", true),
-    completionMode: readOptionalEnum(item.completionMode, ["result_note", "manager_draft", "evidence"], "result_note") as MissionGenesisTask["completionMode"],
+    completionMode: readEnum(item.completionMode, ["result_note", "manager_draft", "evidence", "approval"], "tasks.completionMode") as MissionGenesisTask["completionMode"],
     deliverableTitle: typeof item.deliverableTitle === "string" && item.deliverableTitle.trim()
       ? item.deliverableTitle.trim()
       : readString(item.title, "tasks.title", true),
@@ -880,6 +920,15 @@ function readTasks(value: unknown): MissionGenesisTask[] {
     deadline: readTaskDeadline(item.deadline),
     sourceRefs: readStringArray(item.sourceRefs),
   }));
+}
+
+function readReviewTarget(value: Record<string, unknown>): ReviewTargetInput {
+  return {
+    artifactType: readEnum(value.artifactType, ["manager_output", "song_document"], "tasks.reviewTarget.artifactType") as ReviewTargetInput["artifactType"],
+    artifactId: readString(value.artifactId, "tasks.reviewTarget.artifactId", true),
+    versionId: typeof value.versionId === "string" && value.versionId.trim() ? value.versionId.trim() : null,
+    status: readEnum(value.status, ["draft", "ready_for_review", "accepted", "needs_revision"], "tasks.reviewTarget.status") as ReviewTargetInput["status"],
+  };
 }
 
 function readTaskDeadline(value: unknown) {

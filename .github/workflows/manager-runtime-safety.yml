@@ -37,6 +37,7 @@ on:
       - "src/manager-career-watch.test.ts"
       - "src/manager-e2e-golden.test.ts"
       - "src/manager-production-hardening.test.ts"
+      - "src/mission-genesis-persistence-contract.test.ts"
       - "src/*team*.test.ts"
       - "src/**/*team*.test.ts"
       - "src/features/team/**"
@@ -73,6 +74,7 @@ on:
       - "supabase/functions/_shared/managerHumanTaskGenerationContract.ts"
       - "supabase/functions/_shared/managerTaskQuality.ts"
       - "supabase/functions/_shared/missionGraphPersistence.ts"
+      - "supabase/functions/_shared/missionTaskContract.ts"
       - "supabase/functions/_shared/manager-conversation/context.ts"
       - "supabase/functions/_shared/artistUnderstanding.ts"
       - "supabase/functions/account-team/**"
@@ -106,6 +108,7 @@ on:
       - "supabase/migrations/*adaptive*replan*"
       - "supabase/migrations/*world_model*question_engine*"
       - "supabase/migrations/*human_task*execution_contract*"
+      - "supabase/migrations/*generic_mission_task_contract*"
       - "supabase/migrations/*content_post_result_signals*"
       - "supabase/migrations/*task_result_adaptation*"
       - "supabase/migrations/*manager_result_adaptation_continuation*"
@@ -128,6 +131,7 @@ on:
       - "supabase/tests/manager_career_watch_smoke.sql"
       - "supabase/tests/manager_e2e_golden_smoke.sql"
       - "supabase/tests/manager_production_hardening_smoke.sql"
+      - "supabase/tests/generic_mission_task_contract_smoke.sql"
       - "supabase/tests/manager_production_concurrency_setup.sql"
       - "supabase/tests/manager_production_concurrency_verify.sql"
       - ".github/workflows/manager-runtime-safety.yml"
@@ -172,6 +176,10 @@ jobs:
           src/manager-review-evidence.test.ts
           src/manager-review-evidence-migration.test.ts
           src/manager-review-task-result-function.test.ts
+          src/mission-task-contract.test.ts
+          src/manager-draft-review-lifecycle.test.ts
+          src/mission-task-review-safety.test.tsx
+          src/mission-genesis-persistence-contract.test.ts
       - name: Setup Deno
         uses: denoland/setup-deno@v2
         with:
@@ -192,6 +200,7 @@ jobs:
           supabase/functions/_shared/manager-intelligence/brief/briefPacketProjection.ts
           supabase/functions/_shared/managerTaskQuality.ts
           supabase/functions/_shared/missionGraphPersistence.ts
+          supabase/functions/_shared/missionTaskContract.ts
           supabase/functions/_shared/manager-conversation/context.ts
           supabase/functions/_shared/managerReviewEvidence.ts
           supabase/functions/manager-review-task-result/index.ts
@@ -300,6 +309,7 @@ jobs:
           run_sql supabase/tests/manager_career_watch_smoke.sql
           run_sql supabase/tests/manager_e2e_golden_smoke.sql
           run_sql supabase/tests/manager_production_hardening_smoke.sql
+          run_sql supabase/tests/generic_mission_task_contract_smoke.sql
       - name: Stress concurrent Manager admission
         shell: bash
         run: |
