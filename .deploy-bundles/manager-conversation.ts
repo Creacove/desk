@@ -638,6 +638,8 @@ var taskSchema = {
     "ownerRole",
     "workMode",
     "intent",
+    "readiness",
+    "reviewTarget",
     "assigneeUserId",
     "assignmentReason",
     "primaryCheckpointKey",
@@ -682,13 +684,17 @@ var taskSchema = {
       ]
     },
     readiness: {
-      type: "string",
+      type: [
+        "string",
+        "null"
+      ],
       enum: [
         "preparing",
         "ready",
         "needs_revision",
         "completed",
-        "blocked"
+        "blocked",
+        null
       ]
     },
     reviewTarget: {
@@ -700,6 +706,7 @@ var taskSchema = {
       required: [
         "artifactType",
         "artifactId",
+        "versionId",
         "status"
       ],
       properties: {
