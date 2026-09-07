@@ -15,7 +15,7 @@ const scope: WorkspaceScope = {
 const owner: WorkspaceMember = { userId: "44444444-4444-4444-8444-444444444444", displayName: "Amina", accessRole: "owner", operatingTitle: "Artist", responsibilityTags: ["direction"] };
 const member: WorkspaceMember = { userId: "55555555-5555-4555-8555-555555555555", displayName: "Sarah", accessRole: "member", operatingTitle: "Distribution lead", responsibilityTags: ["distribution", "DSPs"] };
 const roster: WorkspaceRoster = { scope, members: [owner, member], loadedAt: "2026-09-05T09:00:00.000Z" };
-const capability: WorkspaceTeamCapability = { ...scope, planKey: "team_6", enabled: true, entitled: true, source: "pilot", seatLimit: 6, occupiedSeats: 2, reservedSeats: 1, endsAt: null };
+const capability: WorkspaceTeamCapability = { ...scope, teamName: "Kush House", planKey: "team_6", enabled: true, entitled: true, source: "pilot", seatLimit: 6, occupiedSeats: 2, reservedSeats: 1, endsAt: null };
 const pendingInvitation: TeamInvitation = { id: "66666666-6666-4666-8666-666666666666", artistWorkspaceId: scope.artistWorkspaceId, email: "daniel@example.com", status: "pending", expiresAt: "2026-09-12T09:00:00.000Z", operatingTitle: "Mastering", responsibilityTags: ["audio"] };
 
 function createService(overrides: Partial<WorkspaceTeamService> = {}) {
@@ -50,6 +50,7 @@ describe("YourTeamPanel", () => {
     renderPanel();
 
     expect(await screen.findByText("2 of 6 people")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Kush House" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "People" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Invite teammate" })).toBeInTheDocument();
     expect(screen.getByText("Amina")).toBeInTheDocument();
@@ -63,9 +64,9 @@ describe("YourTeamPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Invite teammate" }));
 
-    expect(screen.getByRole("button", { name: "Adjust details" })).toBeInTheDocument();
-    expect(screen.queryByLabelText("Operating title")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Add responsibility")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add role details" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Your role")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Responsibility 1")).not.toBeInTheDocument();
   });
 
   it("keeps the roster read only for a member", async () => {
@@ -89,12 +90,13 @@ describe("YourTeamPanel", () => {
     const { service } = renderPanel();
     fireEvent.click(screen.getByRole("button", { name: "Invite teammate" }));
     fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "newperson@example.com" } });
-    fireEvent.click(screen.getByRole("button", { name: "DSP & Distribution" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add role details" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Your role" }), { target: { value: "DSP / distribution" } });
     fireEvent.click(screen.getByRole("button", { name: "Send invitation" }));
 
     expect(await screen.findByText("Invitation sent")).toBeInTheDocument();
     expect(screen.getByDisplayValue(/\/join#token=A+/)).toBeInTheDocument();
-    expect(service.invite).toHaveBeenCalledWith({ artistWorkspaceId: scope.artistWorkspaceId, email: "newperson@example.com", operatingTitle: "DSP & Distribution", responsibilityTags: ["DSP pitching", "Distribution", "Metadata", "Platform relationships"] });
+    expect(service.invite).toHaveBeenCalledWith({ artistWorkspaceId: scope.artistWorkspaceId, email: "newperson@example.com", operatingTitle: "DSP / distribution", responsibilityTags: ["DSP pitching", "Distribution", "Metadata"] });
   });
 
   it("keeps a copy link prominent when email delivery fails", async () => {
@@ -120,10 +122,10 @@ describe("YourTeamPanel", () => {
   it("uses the shared role picker when editing a member", async () => {
     const { service } = renderPanel();
     fireEvent.click(screen.getByRole("button", { name: "Edit responsibilities for Sarah" }));
-    fireEvent.click(screen.getByRole("button", { name: "PR" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Role for Sarah" }), { target: { value: "PR / communications" } });
     fireEvent.click(screen.getByRole("button", { name: "Save responsibilities for Sarah" }));
 
-    await waitFor(() => expect(service.updateResponsibilities).toHaveBeenCalledWith({ artistWorkspaceId: scope.artistWorkspaceId, memberUserId: member.userId, operatingTitle: "PR", responsibilityTags: ["Press strategy", "Media relationships", "Announcements"] }));
+    await waitFor(() => expect(service.updateResponsibilities).toHaveBeenCalledWith({ artistWorkspaceId: scope.artistWorkspaceId, memberUserId: member.userId, operatingTitle: "PR / communications", responsibilityTags: ["Press strategy", "Media relationships", "Announcements"] }));
   });
 
   it("requires an explicit removal step", async () => {

@@ -8,6 +8,7 @@ export type WorkspaceMember = {
 };
 export type WorkspaceRoster = { scope: WorkspaceScope; members: WorkspaceMember[]; loadedAt: string };
 export type WorkspaceTeamCapability = WorkspaceScope & {
+  teamName?: string | null;
   planKey: "solo" | "team_6";
   enabled: boolean;
   entitled: boolean;

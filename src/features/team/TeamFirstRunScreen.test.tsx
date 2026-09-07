@@ -14,6 +14,7 @@ const scope: WorkspaceScope = {
 
 const capability: WorkspaceTeamCapability = {
   ...scope,
+  teamName: null,
   planKey: "team_6",
   enabled: true,
   entitled: true,
@@ -27,7 +28,7 @@ const capability: WorkspaceTeamCapability = {
 
 function createService() {
   return {
-    completeFirstRun: vi.fn().mockResolvedValue({ ...capability, firstRunCompletedAt: "2026-09-06T10:00:00.000Z" }),
+    completeFirstRun: vi.fn().mockResolvedValue({ ...capability, teamName: "North Star Records", firstRunCompletedAt: "2026-09-06T10:00:00.000Z" }),
     invite: vi.fn().mockResolvedValue({
       invitation: {
         id: "66666666-6666-4666-8666-666666666666",
@@ -45,99 +46,79 @@ function createService() {
 
 afterEach(cleanup);
 
+async function completeOwnerSetup(service: WorkspaceTeamService) {
+  fireEvent.change(screen.getByLabelText("Team or company name"), { target: { value: "North Star Records" } });
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  fireEvent.change(screen.getByRole("combobox", { name: "Your role" }), { target: { value: "Artist / performer" } });
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  fireEvent.change(screen.getByRole("combobox", { name: "Responsibility 1" }), { target: { value: "Creative direction" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
+  await waitFor(() => expect(service.completeFirstRun).toHaveBeenCalledWith({
+    artistWorkspaceId: scope.artistWorkspaceId,
+    teamName: "North Star Records",
+    operatingTitle: "Artist / performer",
+    responsibilityTags: ["Creative direction", "Recording & performance", "Artist development"],
+  }));
+}
+
 describe("TeamFirstRunScreen", () => {
-  it("saves team identity and editable owner responsibilities before showing invite step", async () => {
+  it("reveals team identity, role, and responsibilities one decision at a time", async () => {
     const service = createService();
-    const onComplete = vi.fn();
-    render(
-      <TeamFirstRunScreen
-        service={service}
-        scope={scope}
-        artistName="Nova Vale"
-        capability={capability}
-        onComplete={onComplete}
-      />,
-    );
+    render(<TeamFirstRunScreen service={service} scope={scope} artistName="Nova Vale" capability={capability} onComplete={vi.fn()} />);
 
-    expect(screen.getByRole("heading", { name: "Set up your team" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Name your team" })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Your role" })).not.toBeInTheDocument();
+
     fireEvent.change(screen.getByLabelText("Team or company name"), { target: { value: "North Star Records" } });
-    fireEvent.click(screen.getByRole("button", { name: "Artist Manager" }));
-    fireEvent.change(screen.getByLabelText("Operating title"), { target: { value: "Founder / artist" } });
-    fireEvent.change(screen.getByLabelText("Responsibilities"), { target: { value: "direction, approvals" } });
-    fireEvent.click(screen.getByRole("button", { name: "Continue to invites" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(screen.getByRole("heading", { name: "Your role on the team" })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Responsibility 1" })).not.toBeInTheDocument();
 
-    await waitFor(() => expect(service.completeFirstRun).toHaveBeenCalledWith({
-      artistWorkspaceId: scope.artistWorkspaceId,
-      teamName: "North Star Records",
-      operatingTitle: "Founder / artist",
-      responsibilityTags: ["direction", "approvals"],
-    }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Your role" }), { target: { value: "Artist / performer" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(screen.getByRole("heading", { name: "What will you handle?" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Responsibility 3" })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Responsibility 1" }), { target: { value: "Creative direction" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
+
+    await waitFor(() => expect(service.completeFirstRun).toHaveBeenCalled());
     expect(await screen.findByRole("heading", { name: "Bring in your team" })).toBeInTheDocument();
-    expect(onComplete).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("Invite email")).not.toBeInTheDocument();
   });
 
-  it("keeps custom fields editable after choosing Other", () => {
+  it("lets the owner use a custom role without displaying owner as a work role", () => {
     const service = createService();
-    render(
-      <TeamFirstRunScreen
-        service={service}
-        scope={scope}
-        artistName="Nova Vale"
-        capability={capability}
-        onComplete={vi.fn()}
-      />,
-    );
+    render(<TeamFirstRunScreen service={service} scope={scope} artistName="Nova Vale" capability={capability} onComplete={vi.fn()} />);
 
     fireEvent.change(screen.getByLabelText("Team or company name"), { target: { value: "North Star Records" } });
-    fireEvent.click(screen.getByRole("button", { name: "Other" }));
-    fireEvent.change(screen.getByLabelText("Operating title"), { target: { value: "Tour manager" } });
-    fireEvent.change(screen.getByLabelText("Responsibilities"), { target: { value: "Tour logistics, Booking" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Your role" }), { target: { value: "Other" } });
 
-    expect(screen.getByLabelText("Operating title")).toHaveValue("Tour manager");
-    expect(screen.getByLabelText("Responsibilities")).toHaveValue("Tour logistics, Booking");
+    expect(screen.getByLabelText("Custom role")).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Owner" })).not.toBeInTheDocument();
   });
 
-  it("lets the owner skip invites and finish at Desk", async () => {
+  it("makes inviting optional and keeps it behind one next action", async () => {
     const service = createService();
     const onComplete = vi.fn();
-    render(
-      <TeamFirstRunScreen
-        service={service}
-        scope={scope}
-        artistName="Nova Vale"
-        capability={capability}
-        onComplete={onComplete}
-      />,
-    );
+    render(<TeamFirstRunScreen service={service} scope={scope} artistName="Nova Vale" capability={capability} onComplete={onComplete} />);
 
-    fireEvent.change(screen.getByLabelText("Team or company name"), { target: { value: "North Star Records" } });
-    fireEvent.click(screen.getByRole("button", { name: "Continue to invites" }));
-    await screen.findByRole("heading", { name: "Bring in your team" });
-    fireEvent.click(screen.getByRole("button", { name: "I’ll do this later" }));
+    await completeOwnerSetup(service);
+    fireEvent.click(screen.getByRole("button", { name: "Skip for now" }));
 
-    await waitFor(() => expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({ firstRunCompletedAt: expect.any(String) })));
+    await waitFor(() => expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({ teamName: "North Star Records" })));
     expect(service.invite).not.toHaveBeenCalled();
   });
 
-  it("creates an invite without claiming an email was sent, then continues to Desk", async () => {
+  it("opens the invite form only after the owner chooses to invite someone", async () => {
     const service = createService();
     const onComplete = vi.fn();
-    render(
-      <TeamFirstRunScreen
-        service={service}
-        scope={scope}
-        artistName="Nova Vale"
-        capability={capability}
-        onComplete={onComplete}
-      />,
-    );
+    render(<TeamFirstRunScreen service={service} scope={scope} artistName="Nova Vale" capability={capability} onComplete={onComplete} />);
 
-    fireEvent.change(screen.getByLabelText("Team or company name"), { target: { value: "North Star Records" } });
-    fireEvent.click(screen.getByRole("button", { name: "Continue to invites" }));
-    await screen.findByRole("heading", { name: "Bring in your team" });
+    await completeOwnerSetup(service);
+    fireEvent.click(screen.getByRole("button", { name: "Invite someone" }));
     fireEvent.change(screen.getByLabelText("Invite email"), { target: { value: "manager@example.com" } });
-    fireEvent.change(screen.getByLabelText("Invite role"), { target: { value: "DSP & Distribution" } });
-    fireEvent.change(screen.getByLabelText("Invite responsibilities"), { target: { value: "DSP pitching, Distribution, Metadata" } });
     fireEvent.click(screen.getByRole("button", { name: "Send invite" }));
 
     expect(await screen.findByText("Invite link ready")).toBeInTheDocument();
@@ -145,8 +126,6 @@ describe("TeamFirstRunScreen", () => {
     expect(service.invite).toHaveBeenCalledWith(expect.objectContaining({
       artistWorkspaceId: scope.artistWorkspaceId,
       email: "manager@example.com",
-      operatingTitle: "DSP & Distribution",
-      responsibilityTags: ["DSP pitching", "Distribution", "Metadata"],
     }));
     fireEvent.click(screen.getByRole("button", { name: "Continue to Desk" }));
     await waitFor(() => expect(onComplete).toHaveBeenCalled());

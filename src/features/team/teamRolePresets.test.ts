@@ -5,21 +5,27 @@ import { TEAM_ROLE_PRESETS, findTeamRolePreset, parseResponsibilityTags } from "
 describe("team role presets", () => {
   it("keeps the first-run role labels and default responsibilities in one shared list", () => {
     expect(TEAM_ROLE_PRESETS.map((preset) => preset.label)).toEqual([
-      "Artist Manager",
-      "A&R",
-      "DSP & Distribution",
-      "PR",
-      "Content & Social",
-      "Rights & Royalties",
-      "Marketing",
+      "House / team lead",
+      "Artist / performer",
+      "Manager / project lead",
+      "Label / company",
+      "A&R / talent",
+      "Producer / creative",
+      "Songwriter / composer",
+      "Marketing / growth",
+      "PR / communications",
+      "Content / social",
+      "DSP / distribution",
+      "Rights / business affairs",
+      "Finance / operations",
+      "Recording / engineering",
       "Other",
     ]);
-    expect(findTeamRolePreset("DSP & Distribution")).toEqual(TEAM_ROLE_PRESETS[2]);
-    expect(TEAM_ROLE_PRESETS[2].responsibilityTags).toEqual([
+    expect(findTeamRolePreset("DSP / distribution")).toEqual(TEAM_ROLE_PRESETS[10]);
+    expect(TEAM_ROLE_PRESETS[10].responsibilityTags).toEqual([
       "DSP pitching",
       "Distribution",
       "Metadata",
-      "Platform relationships",
     ]);
   });
 
@@ -33,11 +39,11 @@ describe("team role presets", () => {
 
   it("matches a preset only when both title and responsibilities describe that preset", () => {
     expect(findTeamRolePreset({
-      operatingTitle: "DSP & Distribution",
-      responsibilityTags: ["DSP pitching", "Distribution", "Metadata", "Platform relationships"],
-    })).toEqual(TEAM_ROLE_PRESETS[2]);
+      operatingTitle: "DSP / distribution",
+      responsibilityTags: ["DSP pitching", "Distribution", "Metadata"],
+    })).toEqual(TEAM_ROLE_PRESETS[10]);
     expect(findTeamRolePreset({
-      operatingTitle: "DSP & Distribution",
+      operatingTitle: "DSP / distribution",
       responsibilityTags: ["DSP pitching"],
     })).toBeUndefined();
   });

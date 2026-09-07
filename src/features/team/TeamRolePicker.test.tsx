@@ -8,46 +8,57 @@ import { TeamRolePicker } from "./TeamRolePicker";
 
 afterEach(cleanup);
 
-function Harness({ initialValue = { operatingTitle: null, responsibilityTags: [] } }: { initialValue?: TeamResponsibilities }) {
+function Harness({
+  initialValue = { operatingTitle: null, responsibilityTags: [] },
+  mode = "all",
+}: {
+  initialValue?: TeamResponsibilities;
+  mode?: "role" | "responsibilities" | "all";
+}) {
   const [value, setValue] = useState(initialValue);
-  return <TeamRolePicker value={value} onChange={setValue} />;
+  return <TeamRolePicker value={value} onChange={setValue} mode={mode} />;
 }
 
 describe("TeamRolePicker", () => {
-  it("fills a preset and emits the remaining tags after a chip is removed", () => {
-    render(<Harness />);
+  it("keeps role selection in one compact music-industry dropdown", () => {
+    render(<Harness mode="role" />);
 
-    fireEvent.click(screen.getByRole("button", { name: "DSP & Distribution" }));
+    expect(screen.getByRole("combobox", { name: "Your role" })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Responsibility 1" })).not.toBeInTheDocument();
 
-    expect(screen.getByText("DSP pitching")).toBeInTheDocument();
-    expect(screen.getByText("Distribution")).toBeInTheDocument();
-    expect(screen.getByText("Metadata")).toBeInTheDocument();
-    expect(screen.getByText("Platform relationships")).toBeInTheDocument();
+    fireEvent.change(screen.getByRole("combobox", { name: "Your role" }), { target: { value: "Manager / project lead" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Remove DSP pitching" }));
-
-    expect(screen.queryByText("DSP pitching")).not.toBeInTheDocument();
-    expect(screen.getByText("Distribution")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Your role" })).toHaveValue("Manager / project lead");
   });
 
-  it("lets an Other role enter a custom title and responsibility tags", () => {
-    render(<Harness />);
+  it("shows three compact responsibility slots and adds another only on request", () => {
+    render(<Harness mode="responsibilities" initialValue={{ operatingTitle: "Manager / project lead", responsibilityTags: [] }} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Other" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Operating title" }), { target: { value: "Tour manager" } });
-    fireEvent.change(screen.getByRole("textbox", { name: "Add responsibility" }), { target: { value: "Tour logistics, tour logistics, Booking" } });
-    fireEvent.keyDown(screen.getByRole("textbox", { name: "Add responsibility" }), { key: "Enter", code: "Enter" });
+    expect(screen.getByRole("combobox", { name: "Responsibility 1" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Responsibility 2" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Responsibility 3" })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Responsibility 4" })).not.toBeInTheDocument();
 
-    expect(screen.getByDisplayValue("Tour manager")).toBeInTheDocument();
-    expect(screen.getByText("Tour logistics")).toBeInTheDocument();
-    expect(screen.getByText("Booking")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Add responsibility" }));
+
+    expect(screen.getByRole("combobox", { name: "Responsibility 4" })).toBeInTheDocument();
+  });
+
+  it("keeps a custom role editable without making owner an industry role", () => {
+    render(<Harness mode="role" />);
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Your role" }), { target: { value: "Other" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Custom role" }), { target: { value: "House coordinator" } });
+
+    expect(screen.getByDisplayValue("House coordinator")).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Owner" })).not.toBeInTheDocument();
   });
 
   it("does not mutate the value when disabled", () => {
     const onChange = () => undefined;
     render(<TeamRolePicker value={{ operatingTitle: null, responsibilityTags: [] }} onChange={onChange} disabled />);
 
-    expect(screen.getByRole("button", { name: "DSP & Distribution" })).toBeDisabled();
-    expect(screen.getByRole("textbox", { name: "Add responsibility" })).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: "Your role" })).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: "Responsibility 1" })).toBeDisabled();
   });
 });

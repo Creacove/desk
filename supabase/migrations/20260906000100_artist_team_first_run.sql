@@ -17,11 +17,14 @@ as $$
       workspace.id,
       workspace.account_id,
       workspace.artist_id,
+      account_row.name as team_name,
       settings.enabled,
       settings.pilot_ends_at,
       settings.first_run_completed_at,
       (settings.account_id is not null) as configured
     from public.artist_workspaces workspace
+    join public.accounts account_row
+      on account_row.id = workspace.account_id
     left join public.workspace_team_settings settings
       on settings.artist_workspace_id = workspace.id
     where workspace.id = p_artist_workspace_id
@@ -60,6 +63,7 @@ as $$
     'accountId', capability.account_id,
     'artistWorkspaceId', capability.id,
     'artistId', capability.artist_id,
+    'teamName', capability.team_name,
     'planKey', case when capability.paid or capability.pilot_active then 'team_6' else 'solo' end,
     'enabled', coalesce(capability.enabled, false),
     'entitled', capability.base_access and (capability.paid or capability.pilot_active),

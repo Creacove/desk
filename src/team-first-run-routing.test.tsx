@@ -74,7 +74,7 @@ describe("Team first-run routing", () => {
       />,
     );
 
-    expect(await screen.findByRole("heading", { name: "Set up your team" }, { timeout: 5_000 })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Name your team" }, { timeout: 5_000 })).toBeInTheDocument();
   });
 
   it.each([

@@ -28,9 +28,9 @@ describe("MemberResponsibilitiesForm", () => {
     }
 
     render(<Harness />);
-    fireEvent.click(screen.getByRole("button", { name: "DSP & Distribution" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Role for Mina" }), { target: { value: "DSP / distribution" } });
 
-    expect(screen.getByText("Platform relationships")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Responsibility 1" })).toHaveValue("DSP pitching");
     fireEvent.click(screen.getByRole("button", { name: "Save responsibilities for Mina" }));
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 

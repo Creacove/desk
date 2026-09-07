@@ -2372,6 +2372,7 @@ function CleanProductionWorkspace({
       <div className="relative z-20 mx-auto grid min-h-screen w-full max-w-[1760px] gap-0 px-3 pb-28 pt-0 sm:px-5 lg:grid-cols-[216px_minmax(0,1fr)] lg:px-0 lg:py-0 lg:pb-0">
         <DeskRail
           active={activeSection}
+          teamName={teamCapability?.teamName}
           activeMissionCount={missions.filter((mission) => mission.status !== "complete").length}
           recentManagerConversations={conversations.slice(0, 3).map((conversation) => ({ id: conversation.id, topic: conversation.topic }))}
           onOpenManagerConversation={(conversationId) => {

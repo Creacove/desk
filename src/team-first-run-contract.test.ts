@@ -14,6 +14,7 @@ describe("Team first-run database contract", () => {
     expect(migration).toContain("p_team_name text");
     expect(migration).toContain("p_operating_title text");
     expect(migration).toContain("p_responsibility_tags text[]");
+    expect(migration).toContain("'teamName'");
     expect(migration).toContain("update public.accounts");
     expect(migration).toContain("update public.account_memberships");
     expect(migration).toContain("first_run_completed_at = pg_catalog.now()");

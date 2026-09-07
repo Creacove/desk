@@ -25,10 +25,10 @@ export function MemberResponsibilitiesForm({
         value={draft}
         onChange={onChange}
         disabled={pending}
-        titleLabel={`Operating title for ${memberName}`}
+        titleLabel={`Role for ${memberName}`}
         responsibilitiesLabel={`Responsibilities for ${memberName}`}
       />
-      <p className="mt-3 text-[11px] font-medium text-muted-foreground">Choose a role, then adjust the title or responsibilities if needed.</p>
+      <p className="mt-3 text-[11px] font-medium text-muted-foreground">Choose a role, then adjust the responsibilities if needed.</p>
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <Button type="button" size="sm" pending={pending} onClick={onSave} aria-label={`Save responsibilities for ${memberName}`}>
           Save responsibilities

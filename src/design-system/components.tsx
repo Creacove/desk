@@ -301,6 +301,7 @@ export function sectionForView(view: CleanProductionView): NavSection {
 
 export function DeskRail({
   active,
+  teamName,
   onNavigate,
   onSignOut,
   activeMissionCount = 0,
@@ -308,6 +309,7 @@ export function DeskRail({
   onOpenManagerConversation,
 }: {
   active: NavSection;
+  teamName?: string | null;
   onNavigate: (view: CleanProductionView) => void;
   onSignOut?: () => void;
   activeMissionCount?: number;
@@ -324,7 +326,7 @@ export function DeskRail({
           <BrandMark size="sm" />
           <div className="min-w-0">
             <p className="font-display truncate text-[14px] font-semibold tracking-[-0.015em] text-foreground">Ordersounds</p>
-            <p className="font-ui mt-0.5 text-[11px] font-medium uppercase tracking-[0.07em] text-muted-foreground/68">Artist desk</p>
+            <p className="font-ui mt-0.5 truncate text-[11px] font-medium uppercase tracking-[0.07em] text-muted-foreground/68">{teamName?.trim() || "Artist desk"}</p>
           </div>
         </div>
         <div className="h-px shrink-0 bg-foreground/7" />

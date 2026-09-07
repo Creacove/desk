@@ -142,7 +142,7 @@ export function YourTeamPanel({
   if (!teamAccessActive) {
     return (
       <section data-testid="your-team-panel" className="w-full">
-        <TeamHeading artistName={artistName} />
+        <TeamHeading teamName={currentCapability.teamName} artistName={artistName} />
         <div className="border-t border-foreground/8 py-6">
           <p className="text-[13px] font-medium text-muted-foreground">Team access is unavailable for this workspace.</p>
           <p className="mt-1 text-[12px] font-medium text-muted-foreground/75">Ask the workspace owner to restore Team access.</p>
@@ -156,7 +156,7 @@ export function YourTeamPanel({
   if (error?.scope === "load" && !roster) {
     return (
       <section data-testid="your-team-panel" className="w-full">
-        <TeamHeading artistName={artistName} />
+        <TeamHeading teamName={currentCapability.teamName} artistName={artistName} />
         <div className="border-t border-foreground/8 py-6">
           <p role="alert" className="text-[13px] font-medium text-destructive">{error.message}</p>
           <Button className="mt-4" variant="secondary" size="sm" onClick={() => setRetryKey((value) => value + 1)} leadingIcon={<RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />}>Retry team</Button>
@@ -282,7 +282,7 @@ export function YourTeamPanel({
 
   return (
     <section data-testid="your-team-panel" className="w-full">
-      <TeamHeading artistName={artistName} countLabel={`${currentCapability.occupiedSeats} of ${seatLimit} people`} />
+      <TeamHeading teamName={currentCapability.teamName} artistName={artistName} countLabel={`${currentCapability.occupiedSeats} of ${seatLimit} people`} />
 
       {error && error.scope !== "invite" ? <p role="alert" className="mb-4 text-[12px] font-medium text-destructive">{error.message}</p> : null}
       {mutationError ? <p role="alert" className="mb-4 text-[12px] font-medium text-destructive">{mutationError}</p> : null}
@@ -455,13 +455,13 @@ export function YourTeamPanel({
   );
 }
 
-function TeamHeading({ artistName, countLabel }: { artistName: string; countLabel?: string }) {
+function TeamHeading({ teamName, artistName, countLabel }: { teamName?: string | null; artistName: string; countLabel?: string }) {
   return (
     <div className="mb-5 border-b border-foreground/8 pb-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/72">Team</p>
-          <h2 className="mt-1 font-display text-[26px] font-semibold tracking-[-0.025em] text-foreground">Your team</h2>
+          <h2 className="mt-1 truncate font-display text-[26px] font-semibold tracking-[-0.025em] text-foreground">{teamName?.trim() || "Your team"}</h2>
         </div>
         {countLabel ? <p className="text-[13px] font-semibold text-brand-accent">{countLabel}</p> : null}
       </div>
