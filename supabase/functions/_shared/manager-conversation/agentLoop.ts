@@ -656,7 +656,7 @@ function buildOutputRepairInstruction(error: unknown) {
     detail ? `Validation signal: ${detail}` : "Validation signal: the response was not complete.",
     "Return one complete valid JSON object for the original request now; do not return commentary, markdown, or a partial object.",
     "Keep the work bounded and put detail into executable fields rather than a long response paragraph.",
-    "Every visible human Task must contain at least two distinct ordered execution steps; content-execution Tasks need at least four concrete steps and must include the setup/format, hook/message, creator action, and finish/distribution direction.",
+    "Every visible human Task must contain at least 3 distinct ordered execution steps; content-execution Tasks need at least four concrete steps and must include the setup/format, hook/message, creator action, and finish/distribution direction.",
     "Do not omit required fields, drop a Task, or create a vague placeholder just to fit the response.",
   ].join(" ");
 }

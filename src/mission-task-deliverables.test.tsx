@@ -20,7 +20,7 @@ describe("mission task execution", () => {
     expect(within(dialog).getByText("90-day thesis")).toBeInTheDocument();
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Already done" }));
-    fireEvent.click(within(dialog).getByRole("button", { name: "Done" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Finish task" }));
 
     await waitFor(() => expect(onCompleteTask).toHaveBeenCalledWith("task-thesis", "completed", "", [], undefined));
   });
@@ -40,7 +40,7 @@ describe("mission task execution", () => {
     expect(within(dialog).getByRole("button", { name: "Upload" })).toBeEnabled();
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Already done" }));
-    fireEvent.click(within(dialog).getByRole("button", { name: "Done" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Finish task" }));
     await waitFor(() => expect(onCompleteTask).toHaveBeenCalledWith("task-thesis", "completed", "", [], undefined));
   });
 
@@ -70,7 +70,7 @@ describe("mission task execution", () => {
     expect(await screen.findByText("thesis.pdf")).toBeInTheDocument();
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Already done" }));
-    fireEvent.click(within(dialog).getByRole("button", { name: "Done" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Finish task" }));
 
     await waitFor(() => expect(onCompleteTask).toHaveBeenCalledWith("task-thesis", "completed", "", ["doc-thesis-1"], undefined));
   });
@@ -87,7 +87,7 @@ describe("mission task execution", () => {
     renderMission(mission, { openTaskId: "task-thesis" });
 
     const dialog = screen.getByRole("dialog", { name: "Review discovery and artist-attachment evidence" });
-    expect(within(dialog).getByText("Desk is handling this")).toBeInTheDocument();
+    expect(within(dialog).getByText("Manager is preparing this")).toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: "Mark complete" })).not.toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: "Work with Manager" })).not.toBeInTheDocument();
   });
@@ -203,7 +203,7 @@ describe("mission task execution", () => {
     expect(within(dialog).getByText("Review the proposed thesis")).toBeInTheDocument();
     expect(within(dialog).getByText("The artist approved the career thesis.")).toBeInTheDocument();
     expect(within(dialog).getByText("Use the thesis in the next checkpoint.")).toBeInTheDocument();
-    expect(within(dialog).getByText("Done")).toBeInTheDocument();
+    expect(within(dialog).getByText("Completed")).toBeInTheDocument();
   });
 });
 

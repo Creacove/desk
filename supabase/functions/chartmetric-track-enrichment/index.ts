@@ -626,7 +626,9 @@ async function writeSourceSnapshot(
 async function writeEvidenceItems(supabase: any, sourceSyncJobId: string, evidenceItems: Array<Record<string, unknown>>) {
   if (!evidenceItems.length) return;
 
-  const rows = evidenceItems.map((item) => ({ ...item, created_from_source_sync_job_id: sourceSyncJobId }));
+  const rows = deduplicateEvidenceRows(
+    evidenceItems.map((item) => ({ ...item, created_from_source_sync_job_id: sourceSyncJobId })),
+  );
   const { error } = await supabase.from("evidence_items").insert(rows);
   if (!error) return;
   if ((error as { code?: string }).code === "23505") {
@@ -636,6 +638,22 @@ async function writeEvidenceItems(supabase: any, sourceSyncJobId: string, eviden
     if (existing.data?.length) return;
   }
   throw error;
+}
+
+function deduplicateEvidenceRows(rows: Array<Record<string, unknown>>) {
+  const unique = new Map<string, Record<string, unknown>>();
+  for (const row of rows) {
+    const key = [
+      row.created_from_source_sync_job_id,
+      row.evidence_type,
+      row.subject_type,
+      row.subject_id,
+      row.metric_name,
+      row.raw_ref,
+    ].map((value) => String(value ?? "")).join("\u001f");
+    if (!unique.has(key)) unique.set(key, row);
+  }
+  return [...unique.values()];
 }
 
 async function updateSourceSyncJob(

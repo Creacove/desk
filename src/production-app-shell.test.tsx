@@ -4788,7 +4788,7 @@ describe("Clean production prototype-match shell", () => {
     const taskDialog = screen.getByRole("dialog", { name: "Complete evidence task" });
     fireEvent.click(within(taskDialog).getByRole("button", { name: "Already done" }));
     fireEvent.change(within(taskDialog).getByLabelText("What changed?"), { target: { value: "Outcome captured without private content." } });
-    fireEvent.click(within(taskDialog).getByRole("button", { name: "Done" }));
+    fireEvent.click(within(taskDialog).getByRole("button", { name: "Finish task" }));
 
     await waitFor(() => expect(repositories.missions.completeTask).toHaveBeenCalled());
     expect(analyticsMock.trackEventOnce).toHaveBeenCalledWith(

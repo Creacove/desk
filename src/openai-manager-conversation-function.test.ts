@@ -47,6 +47,20 @@ describe("OpenAI Manager Conversation Router", () => {
     visit(managerConversationJsonSchema.schema);
   });
 
+  it("requires three steps for every Manager-authored mission task", () => {
+    const schema = managerConversationJsonSchema.schema as any;
+    expect(schema.properties.missionGraphDecisions.items.properties.tasks.items.properties.steps.minItems).toBe(3);
+  });
+
+  it("only lets the model plan human action or collaborative draft tasks", () => {
+    const schema = managerConversationJsonSchema.schema as any;
+    const task = schema.properties.missionGraphDecisions.items.properties.tasks.items;
+    expect(task.properties.intent.enum).toEqual(["human_action", "collaborative_draft"]);
+    expect(task.properties.workMode.enum).toEqual(["artist_action", "collaborative"]);
+    expect(task.properties.completionMode.enum).toEqual(["result_note", "manager_draft"]);
+    expect(task.properties.reviewTarget.type).toBe("null");
+  });
+
   it("defines the document text normalizer used while loading focused song context", () => {
     expect(songDocumentDraftSource).toContain("function cleanLongText");
     expect(songDocumentDraftSource).toContain("cleanLongText(metadata.body, 60_000)");
@@ -466,7 +480,7 @@ describe("OpenAI Manager Conversation Router", () => {
               intent: "collaborative_draft",
               primaryCheckpointKey: "london_return_signal",
               purpose: "Create the baseline needed to judge whether attention is becoming durable.",
-              steps: ["Pull London streaming data for the last 30 days.", "Record the baseline and review threshold."],
+              steps: ["Pull London streaming data for the last 30 days.", "Record the baseline and review threshold.", "Return the proposed baseline for artist review."],
               evidenceNeeded: ["London baseline"],
               completionExpectation: "A dated baseline and review threshold are saved.",
               completionMode: "manager_draft",
@@ -503,10 +517,10 @@ describe("OpenAI Manager Conversation Router", () => {
     }
   });
 
-  it("rejects a generated human task with fewer than two execution steps before persistence", () => {
+  it("rejects a generated human task with fewer than three execution steps before persistence", () => {
     const schemaText = JSON.stringify(managerConversationJsonSchema.schema);
     expect(schemaText).toContain('"steps":{"type":"array"');
-    expect(schemaText).toContain('"minItems":2');
+    expect(schemaText).toContain('"minItems":3');
     expect(() => parseManagerConversationOutput(JSON.stringify({
       actionPolicy: "create_mission",
       topic: "Audience mission",
@@ -571,7 +585,7 @@ describe("OpenAI Manager Conversation Router", () => {
       contextQuestions: [],
       proposedActions: [],
       durableMemory: [],
-    }))).toThrow(/at least two distinct execution steps/i);
+    }))).toThrow(/at least 3 distinct execution steps/i);
   });
 
   it("does not stream the authoritative answer before its work graph is durable", () => {

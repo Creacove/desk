@@ -89,6 +89,7 @@ describe("Manager structured-output recovery", () => {
   it("does not silently drop an orphaned mission task from an otherwise valid response", () => {
     const malformed = JSON.parse(missionOutput([
       "Use the prepared hook and record the vertical piece in one take.",
+      "Check the crop, sound, and caption against the prepared brief.",
       "Publish it with the agreed caption, then record the link and first response signal.",
     ])) as Record<string, any>;
     malformed.missionGraphDecisions[0].tasks[0].primaryCheckpointKey = "missing-checkpoint";
@@ -101,6 +102,7 @@ describe("Manager structured-output recovery", () => {
     const invalid = missionOutput(["Publish the prepared test."]);
     const valid = missionOutput([
       "Use the prepared hook and record the vertical piece in one take.",
+      "Check the crop, sound, and caption against the prepared brief.",
       "Publish it with the agreed caption, then record the link and first response signal.",
     ]);
     const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
@@ -131,7 +133,7 @@ describe("Manager structured-output recovery", () => {
     expect(requests).toHaveLength(2);
     expect((requests[1].previous_response_id as string)).toBe("response-1");
     expect(requests[1].tools).toEqual([]);
-    expect(JSON.stringify(requests[1].input)).toMatch(/complete|two distinct|execution steps/i);
+    expect(JSON.stringify(requests[1].input)).toMatch(/complete|3 distinct|execution steps/i);
   });
 
   it("repairs truncated JSON before the conversation runtime can persist or present the turn", async () => {
@@ -143,6 +145,7 @@ describe("Manager structured-output recovery", () => {
         id: `response-${requests.length}`,
         output_text: requests.length === 1 ? '{"topic":"Content mission","responseBody":"truncated' : missionOutput([
           "Record the prepared vertical piece using the agreed hook.",
+          "Check the crop, sound, and caption against the prepared brief.",
           "Publish it and return the link plus the first response signal.",
         ]),
       }), { status: 200 });
@@ -172,6 +175,7 @@ describe("Manager structured-output recovery", () => {
     const invalid = missionOutput([
       "Set up a vertical phone shot and frame the video.",
       "Open with a hook and say the first line, then publish the post.",
+      "Return the post link and first response signal.",
     ]);
     const valid = missionOutput([
       "Set up a vertical 9:16 phone shot in a quiet room and frame the opening visual.",
@@ -260,6 +264,7 @@ describe("Manager structured-output recovery", () => {
     const requests: Array<Record<string, unknown>> = [];
     const valid = missionOutput([
       "Use the prepared hook and record the vertical piece in one take.",
+      "Check the crop, sound, and caption against the prepared brief.",
       "Publish it with the agreed caption, then record the link and first response signal.",
     ]);
     const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {

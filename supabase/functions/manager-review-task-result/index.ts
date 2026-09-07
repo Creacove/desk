@@ -7,11 +7,11 @@ import {
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 import { assertWorkspaceOperation } from "../_shared/workspaceAuthorization.ts";
-import { buildManagerHumanTaskGenerationContract } from "../_shared/managerHumanTaskGenerationContract.ts";
-import { assertExecutableHumanTask } from "../_shared/managerTaskQuality.ts";
+import { buildManagerHumanTaskGenerationContract, MIN_HUMAN_TASK_STEPS } from "../_shared/managerHumanTaskGenerationContract.ts";
+import { assertExecutableHumanTask, HumanTaskContractError } from "../_shared/managerTaskQuality.ts";
 import { normalizeHumanTaskAssignments, type TaskAssignmentContext } from "../_shared/taskAssignment.ts";
 import { loadActiveWorkspaceRoster } from "../_shared/workspaceRoster.ts";
-import { normalizeMissionTask } from "../_shared/missionTaskContract.ts";
+import { MissionTaskContractError, normalizeMissionTask } from "../_shared/missionTaskContract.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -61,6 +61,7 @@ type ManagerTaskReview = {
     assignmentReason: string | null;
   }>;
   permissionRequests: Array<{ title: string; requestType: string; body: string; risk: string }>;
+  continuationLimitations?: string[];
 };
 
 class TaskReviewAlreadyRunningError extends Error {
@@ -119,9 +120,9 @@ Deno.serve(withAppErrorCapture("manager-review-task-result", async (request) => 
     usageId = await createUsageEvent(db, input, runId);
 
     failureStage = "openai_review";
-    const { review, usage } = await callOpenAIManagerReview(context, assignmentContext);
+    const { review: generatedReview, usage } = await callOpenAIManagerReview(context, assignmentContext);
     failureStage = "validate_review_continuation";
-    await preflightReviewContinuation(db, context, runId, review);
+    const review = await retainValidReviewContinuations(db, context, runId, generatedReview);
 
     // A second request can finish model work after the first request has
     // already persisted the terminal result. Re-read the durable result before
@@ -424,7 +425,7 @@ async function callOpenAIManagerReview(context: unknown, assignmentContext: Task
         "Return outcome accepted only when the completion contract is met, needs_revision when the same task should continue with concrete edits, or blocked when an external dependency prevents progress.",
         "After the final required task, choose met, needs_revision, or watching_signal and explain the decision through checkpointRecommendation.",
         "Do not create busywork. Add follow-up work only when the result changes what the mission needs next.",
-        "Every human follow-up must be immediately executable: declare intent human_action or collaborative_draft, provide at least two distinct ordered steps (at least four for content/video execution), a concrete completion expectation, the exact work Desk will do, the exact work the artist/team must do, and the risk of delay. Desk must complete the Manager responsibility itself; never assign research, analysis, drafting, interpretation, or planning back to the artist.",
+        `Every human follow-up must be immediately executable: declare intent human_action or collaborative_draft, provide at least ${MIN_HUMAN_TASK_STEPS} distinct ordered steps (at least four for content/video execution), a concrete completion expectation, the exact work Desk will do, the exact work the artist/team must do, and the risk of delay. Desk must complete the Manager responsibility itself; never assign research, analysis, drafting, interpretation, or planning back to the artist.`,
         buildManagerHumanTaskGenerationContract(),
       ].join("\n"),
       input: JSON.stringify(context),
@@ -491,7 +492,7 @@ const reviewJsonSchema = {
             ownerRole: { type: "string" },
             workMode: { type: "string", enum: ["artist_action", "collaborative"] },
             intent: { type: "string", enum: ["human_action", "collaborative_draft"] },
-            steps: { type: "array", minItems: 2, maxItems: 8, items: { type: "string" } },
+            steps: { type: "array", minItems: MIN_HUMAN_TASK_STEPS, maxItems: 8, items: { type: "string" } },
             evidenceNeeded: { type: "array", items: { type: "string" } },
             completionExpectation: { type: "string" },
             completionMode: { type: "string", enum: ["result_note", "manager_draft"] },
@@ -746,45 +747,63 @@ function applyCanonicalEvidence(review: ManagerTaskReview, context: any): Manage
   };
 }
 
-async function preflightReviewContinuation(db: any, context: any, runId: string, review: ManagerTaskReview) {
+async function retainValidReviewContinuations(db: any, context: any, runId: string, review: ManagerTaskReview) {
   const planVersionId = typeof context.mission?.active_plan_version_id === "string"
     ? context.mission.active_plan_version_id
     : "";
-  if (!planVersionId || !context.checkpoint?.id) return;
+  if (!planVersionId || !context.checkpoint?.id) return review;
 
+  const followUpTasks: ManagerTaskReview["followUpTasks"] = [];
+  const continuationLimitations: string[] = [];
   for (const task of review.followUpTasks) {
     const owner = task.ownerRole.trim().toLowerCase();
-    if (["manager", "desk", "ai", "ai manager"].includes(owner)) continue;
-    const normalizedTask = normalizeMissionTask({
-      title: task.title,
-      purpose: task.purpose,
-      steps: task.steps,
-      ownerRole: task.ownerRole,
-      workMode: task.workMode,
-      intent: task.intent,
-      completionMode: task.completionMode,
-    });
-    assertExecutableHumanTask(task);
-    const { error } = await db.rpc("assert_generated_human_task_execution_contract_v1", {
-      p_task: {
-        scope: "mission",
-        missionPlanVersionId: planVersionId,
-        createdFromRunId: runId,
+    if (["manager", "desk", "ai", "ai manager"].includes(owner)) {
+      continuationLimitations.push(`Manager omitted an invalid optional follow-up: ${task.title}`);
+      continue;
+    }
+    try {
+      const normalizedTask = normalizeMissionTask({
         title: task.title,
-        ownerRole: task.ownerRole,
-        workMode: normalizedTask.workMode,
-        intent: normalizedTask.intent,
         purpose: task.purpose,
-        completionExpectation: task.completionExpectation,
-        completionMode: normalizedTask.completionMode,
-        managerResponsibility: task.managerResponsibility,
-        userResponsibility: task.userResponsibility,
-        riskIfLate: task.riskIfLate,
-      },
-      p_steps: task.steps,
-    });
-    if (error) throw error;
+        steps: task.steps,
+        ownerRole: task.ownerRole,
+        workMode: task.workMode,
+        intent: task.intent,
+        completionMode: task.completionMode,
+      });
+      assertExecutableHumanTask(task);
+      const { error } = await db.rpc("assert_generated_human_task_execution_contract_v1", {
+        p_task: {
+          scope: "mission",
+          missionPlanVersionId: planVersionId,
+          createdFromRunId: runId,
+          title: task.title,
+          ownerRole: task.ownerRole,
+          workMode: normalizedTask.workMode,
+          intent: normalizedTask.intent,
+          purpose: task.purpose,
+          completionExpectation: task.completionExpectation,
+          completionMode: normalizedTask.completionMode,
+          managerResponsibility: task.managerResponsibility,
+          userResponsibility: task.userResponsibility,
+          riskIfLate: task.riskIfLate,
+        },
+        p_steps: task.steps,
+      });
+      if (error) throw error;
+      followUpTasks.push(task);
+    } catch (error) {
+      if (!isGeneratedTaskContractError(error)) throw error;
+      continuationLimitations.push(`Manager omitted an invalid optional follow-up: ${task.title}`);
+    }
   }
+  return { ...review, followUpTasks, continuationLimitations };
+}
+
+function isGeneratedTaskContractError(error: unknown) {
+  if (error instanceof HumanTaskContractError || error instanceof MissionTaskContractError) return true;
+  const message = describeError(error, "");
+  return /human task contract|mission task contract|visible task|execution steps|system support/i.test(message);
 }
 
 function resolveCheckpointStatus(
@@ -843,7 +862,7 @@ async function completeManagerRun(db: any, runId: string, review: ManagerTaskRev
     confidence: "medium",
     steps_payload: [{ step: "task_result_received", status: "completed" }, { step: "manager_review", status: "completed" }],
     action_plan: [...review.followUpTasks, ...review.permissionRequests],
-    limitations: [],
+    limitations: review.continuationLimitations ?? [],
     completed_at: new Date().toISOString(),
   }).eq("id", runId);
   if (error) throw error;
@@ -1139,7 +1158,7 @@ function normalizeReview(raw: string): ManagerTaskReview {
       assigneeUserId: typeof item.assigneeUserId === "string" ? item.assigneeUserId.trim() || null : null,
       assignmentReason: typeof item.assignmentReason === "string" ? item.assignmentReason.trim() || null : null,
     })).filter((item) =>
-      item.title && item.purpose && item.steps.length >= 2 && item.completionExpectation &&
+      item.title && item.purpose && item.steps.length >= MIN_HUMAN_TASK_STEPS && item.completionExpectation &&
       item.managerResponsibility && item.userResponsibility && item.riskIfLate
     ) : [],
     permissionRequests: Array.isArray(value.permissionRequests) ? value.permissionRequests.filter(isRecord).map((item) => ({

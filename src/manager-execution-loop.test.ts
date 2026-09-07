@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const taskExecution = read("supabase/functions/manager-task-execution/index.ts");
 const taskSheet = read("src/features/missions/MissionTaskSheet.tsx");
+const missionModel = read("src/features/missions/missionModel.ts");
 const workSurface = read("src/features/missions/MissionWorkSurface.tsx");
 const deskHome = read("src/features/desk/DeskHQ.tsx");
 const todayExecution = read("src/features/desk/TodayRuntimeExecution.tsx");
@@ -51,10 +52,11 @@ describe("Manager execution loop", () => {
     expect(taskExecution).toContain("reviewDeferred: true");
   });
 
-  it("gives human work the four operating actions without creating another task system", () => {
-    for (const label of ["Start", "Done", "Move it", "I’m blocked"]) {
-      expect(taskSheet).toMatch(new RegExp(`>\\s*${label.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}\\s*<`));
+  it("gives human work clear lifecycle actions without creating another task system", () => {
+    for (const label of ["Start task", "Finish task", "Continue task", "Completed"]) {
+      expect(missionModel).toContain(`"${label}"`);
     }
+    for (const label of ["Do later", "Change timing", "I’m blocked"]) expect(taskSheet).toContain(label);
     expect(workSurface).toContain("startMissionTask");
     expect(workSurface).toContain("moveMissionTask");
     expect(workSurface).toContain("onCompleteTask(");

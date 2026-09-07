@@ -220,6 +220,12 @@ export function managerDraftNeedsRevision(task: MissionTaskViewModel) {
   return task.result?.status === "revised" || task.managerDraft?.status === "needs_revision";
 }
 
+export function getTaskLifecycleLabel(task: MissionTaskViewModel, started: boolean, done: boolean) {
+  if (done) return "Completed";
+  if (task.readiness === "needs_revision" || managerDraftNeedsRevision(task)) return "Continue task";
+  return started ? "Finish task" : "Start task";
+}
+
 export function getTaskPrimaryLabel(task: MissionTaskViewModel, approved: boolean) {
   if (task.intent === "review_approval") {
     if (!isReviewTaskReady(task)) return "Review not ready";

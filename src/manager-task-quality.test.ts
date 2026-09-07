@@ -6,6 +6,8 @@ import {
 import { buildMissionGenesisInstructions } from "../supabase/functions/_shared/openaiMissionGenesis";
 import { buildManagerConversationInstructions } from "../supabase/functions/_shared/openaiManagerConversation";
 import {
+  buildManagerHumanTaskGenerationContract,
+  MIN_HUMAN_TASK_STEPS,
   MANAGER_HUMAN_TASK_GENERATION_CONTRACT_VERSION,
 } from "../supabase/functions/_shared/managerHumanTaskGenerationContract";
 import {
@@ -21,6 +23,11 @@ const validation = {
 };
 
 describe("Manager human Task quality", () => {
+  it("states the validator's minimum step rule in the shared model instructions", () => {
+    expect(MIN_HUMAN_TASK_STEPS).toBe(3);
+    expect(buildManagerHumanTaskGenerationContract()).toContain("at least 3 distinct, ordered execution steps");
+  });
+
   it("frontloads the same Manager-grade Task contract into every model path that can generate Tasks", () => {
     const generators = {
       missionGenesis: buildMissionGenesisInstructions("initial"),

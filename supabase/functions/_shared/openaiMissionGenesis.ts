@@ -1,4 +1,4 @@
-import { buildManagerHumanTaskGenerationContract } from "./managerHumanTaskGenerationContract.ts";
+import { buildManagerHumanTaskGenerationContract, MIN_HUMAN_TASK_STEPS } from "./managerHumanTaskGenerationContract.ts";
 import { assertExecutableHumanTask } from "./managerTaskQuality.ts";
 import {
   normalizeMissionTask,
@@ -253,7 +253,7 @@ export const missionGenesisJsonSchema = {
             assignmentReason: { type: ["string", "null"] },
             primaryCheckpointKey: { type: "string" },
             purpose: { type: "string" },
-            steps: { type: "array", minItems: 2, maxItems: 6, items: { type: "string" } },
+            steps: { type: "array", minItems: MIN_HUMAN_TASK_STEPS, maxItems: 6, items: { type: "string" } },
             evidenceNeeded: stringArraySchema,
             completionExpectation: { type: "string" },
             completionMode: { type: "string", enum: ["result_note", "manager_draft", "evidence", "approval"] },
@@ -379,7 +379,7 @@ export const missionGenesisJsonSchema = {
                   assignmentReason: { type: ["string", "null"] },
                   primaryCheckpointKey: { type: "string" },
                   purpose: { type: "string" },
-                  steps: { type: "array", minItems: 2, maxItems: 6, items: { type: "string" } },
+                  steps: { type: "array", minItems: MIN_HUMAN_TASK_STEPS, maxItems: 6, items: { type: "string" } },
                   evidenceNeeded: stringArraySchema,
                   completionExpectation: { type: "string" },
                   completionMode: { type: "string", enum: ["result_note", "manager_draft", "evidence", "approval"] },

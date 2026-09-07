@@ -36,7 +36,7 @@ export function assertExecutableHumanTask(task: ExecutableHumanTaskShape) {
 
   if (!title) issues.push("Title is required.");
   if (!purpose) issues.push("Purpose is required.");
-  if (steps.length < 3) issues.push("The structured Task contract requires at least three execution steps.");
+  if (steps.length < MIN_HUMAN_TASK_STEPS) issues.push(`The structured Task contract requires at least ${MIN_HUMAN_TASK_STEPS} execution steps.`);
   if (!completionExpectation) issues.push("Completion expectation is required.");
   if (!managerResponsibility) issues.push("Manager responsibility is required.");
   if (!userResponsibility) issues.push("Human responsibility is required.");
@@ -64,3 +64,4 @@ function clean(value: unknown) {
 function normalize(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
+import { MIN_HUMAN_TASK_STEPS } from "./managerHumanTaskGenerationContract.ts";

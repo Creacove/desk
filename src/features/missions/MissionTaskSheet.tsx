@@ -13,6 +13,7 @@ import {
   type CompletionIntent,
   type TaskMutationState,
   humanDeliverableStatus,
+  getTaskLifecycleLabel,
   isReviewTaskReady,
   isTaskPreparing,
   managerDraftNeedsRevision,
@@ -288,7 +289,7 @@ export function TaskSheet({
           ) : done || reviewApproved ? (
             <div className="mt-7 flex min-h-12 items-center gap-2 rounded-[14px] bg-brand-accent/[0.07] px-4 text-[13px] font-semibold text-brand-accent">
               <Check className="h-4 w-4" />
-              {reviewApproved ? "Approved" : "Done"}
+              {reviewApproved ? "Approved" : "Completed"}
             </div>
           ) : preparing && taskIntent === "review_approval" ? (
             <div data-testid="mission-task-preparing" className="mt-7 rounded-[14px] bg-foreground/[0.035] px-4 py-4">
@@ -305,7 +306,7 @@ export function TaskSheet({
             </div>
           ) : workMode === "manager_work" ? (
             <div className="mt-7 rounded-[14px] bg-foreground/[0.035] px-4 py-4">
-              <p className="text-[13px] font-semibold text-foreground">Desk is handling this</p>
+              <p className="text-[13px] font-semibold text-foreground">Manager is preparing this</p>
             </div>
           ) : moving ? (
             <div className="mt-7 border-t border-foreground/8 pt-5">
@@ -335,7 +336,7 @@ export function TaskSheet({
               />
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <Button type="button" variant="secondary" size="lg" onClick={() => { setMoving(false); setMoveAt(""); setMoveNote(""); }} disabled={pending}>Cancel</Button>
-                <Button type="button" size="lg" onClick={() => void submitMove()} pending={pending && mutation?.kind === "move"} disabled={!moveAt || new Date(moveAt).getTime() <= Date.now()}>Move it</Button>
+                <Button type="button" size="lg" onClick={() => void submitMove()} pending={pending && mutation?.kind === "move"} disabled={!moveAt || new Date(moveAt).getTime() <= Date.now()}>Save timing</Button>
               </div>
             </div>
           ) : intent ? (
@@ -368,14 +369,14 @@ export function TaskSheet({
                   pending={pending}
                   disabled={noteRequired && !note.trim()}
                 >
-                  {intent === "blocked" ? "Tell Desk" : completionMode === "manager_draft" ? "Submit for review" : "Done"}
+                  {intent === "blocked" ? "Tell Desk" : completionMode === "manager_draft" ? "Submit for review" : "Finish task"}
                 </Button>
               </div>
             </div>
           ) : scheduledForLater ? (
             <div className="mt-7 grid gap-2 border-t border-foreground/8 pt-5">
               <Button type="button" size="lg" disabled className="w-full">Available {formatAvailability(executionState!.availableFrom!)}</Button>
-              <Button type="button" variant="secondary" size="lg" onClick={() => setMoving(true)} disabled={pending} className="w-full">Move it</Button>
+              <Button type="button" variant="secondary" size="lg" onClick={() => setMoving(true)} disabled={pending} className="w-full">Change timing</Button>
               {!blocked ? <Button type="button" variant="ghost" size="lg" onClick={() => setIntent("blocked")} disabled={pending} className="w-full">I’m blocked</Button> : null}
             </div>
           ) : (
@@ -405,7 +406,7 @@ export function TaskSheet({
                 </Button>
               ) : !started ? (
                 <Button type="button" size="lg" onClick={() => void onStart()} pending={pending && mutation?.kind === "start"} disabled={pending || blocked} leadingIcon={<Play className="h-4 w-4" />} className="w-full">
-                  Start
+                  {getTaskLifecycleLabel(task, started, done)}
                 </Button>
               ) : (
                 <Button
@@ -415,7 +416,7 @@ export function TaskSheet({
                   disabled={pending || blocked || !canComplete}
                   className="w-full"
                 >
-                  Done
+                  {getTaskLifecycleLabel(task, started, done)}
                 </Button>
               )}
 
@@ -426,7 +427,7 @@ export function TaskSheet({
               ) : null}
 
               <Button type="button" variant="secondary" size="lg" onClick={() => setMoving(true)} disabled={pending} className="w-full">
-                Move it
+                Do later
               </Button>
 
               {!blocked ? (

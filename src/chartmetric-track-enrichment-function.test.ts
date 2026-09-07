@@ -90,6 +90,13 @@ describe("Chartmetric track enrichment edge function", () => {
     expect(normalizeIndex).toBeGreaterThan(snapshotIndex);
   });
 
+  it("deduplicates normalized evidence within a job before inserting it", () => {
+    expect(functionSource).toContain("deduplicateEvidenceRows");
+    for (const field of ["evidence_type", "subject_type", "subject_id", "metric_name", "raw_ref"]) {
+      expect(functionSource).toContain(`row.${field}`);
+    }
+  });
+
   it("finishes after normalized evidence without invoking OpenAI or Manager Read generation", () => {
     const evidenceIndex = functionSource.indexOf("await writeEvidenceItems(authClient, jobId, evidenceItems)");
     expect(evidenceIndex).toBeGreaterThan(-1);

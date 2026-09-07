@@ -83,11 +83,19 @@ describe("Manager task-result review function", () => {
     ]) {
       expect(functionSource).toContain(`\"${field}\"`);
     }
-    expect(functionSource).toContain('steps: { type: "array", minItems: 2');
+    expect(functionSource).toContain('steps: { type: "array", minItems: MIN_HUMAN_TASK_STEPS');
+    expect(functionSource).toContain("at least ${MIN_HUMAN_TASK_STEPS} distinct ordered steps");
     expect(functionSource).toContain("Desk must complete the Manager responsibility itself");
-    expect(functionSource).toContain("preflightReviewContinuation");
+    expect(functionSource).toContain("retainValidReviewContinuations");
     expect(functionSource).toContain('rpc("assert_generated_human_task_execution_contract_v1"');
     expect(functionSource).toContain('failureStage = "validate_review_continuation"');
+  });
+
+  it("omits invalid optional follow-ups without failing the primary task review", () => {
+    expect(functionSource).toContain("retainValidReviewContinuations");
+    expect(functionSource).toContain("isGeneratedTaskContractError");
+    expect(functionSource).toContain("continuationLimitations");
+    expect(functionSource).toContain("Manager omitted an invalid optional follow-up");
   });
 
   it("supplies and validates canonical Team assignments for task-result continuation", () => {

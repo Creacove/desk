@@ -7,8 +7,8 @@ import type {
 } from "./openaiMissionGenesis.ts";
 import {
   normalizeMissionTask,
-  type ReviewTargetInput,
 } from "./missionTaskContract.ts";
+import { MIN_HUMAN_TASK_STEPS } from "./managerHumanTaskGenerationContract.ts";
 
 export type ManagerConversationCreatedWork = {
   type: "music_item" | "mission" | "task";
@@ -116,28 +116,18 @@ const taskSchema = {
     title: { type: "string" },
     scheduleKey: { type: "string" },
     ownerRole: { type: "string" },
-    workMode: { type: "string", enum: ["artist_action", "collaborative", "manager_work"] },
-    intent: { type: "string", enum: ["manager_work", "human_action", "collaborative_draft", "review_approval"] },
+    workMode: { type: "string", enum: ["artist_action", "collaborative"] },
+    intent: { type: "string", enum: ["human_action", "collaborative_draft"] },
     readiness: { type: ["string", "null"], enum: ["preparing", "ready", "needs_revision", "completed", "blocked", null] },
-    reviewTarget: {
-      type: ["object", "null"],
-      additionalProperties: false,
-      required: ["artifactType", "artifactId", "versionId", "status"],
-      properties: {
-        artifactType: { type: "string", enum: ["manager_output", "song_document"] },
-        artifactId: { type: "string" },
-        versionId: { type: ["string", "null"] },
-        status: { type: "string", enum: ["draft", "ready_for_review", "accepted", "needs_revision"] },
-      },
-    },
+    reviewTarget: { type: "null" },
     assigneeUserId: { type: ["string", "null"] },
     assignmentReason: { type: ["string", "null"] },
     primaryCheckpointKey: { type: "string" },
     purpose: { type: "string" },
-    steps: { ...stringArraySchema, minItems: 2, maxItems: 6 },
+    steps: { ...stringArraySchema, minItems: MIN_HUMAN_TASK_STEPS, maxItems: 6 },
     evidenceNeeded: stringArraySchema,
     completionExpectation: { type: "string" },
-    completionMode: { type: "string", enum: ["result_note", "manager_draft", "evidence", "approval"] },
+    completionMode: { type: "string", enum: ["result_note", "manager_draft"] },
     deliverableTitle: { type: "string" },
     deliverableRequirements: stringArraySchema,
     managerResponsibility: { type: "string" },
@@ -438,7 +428,7 @@ function normalizeMissionGraphDecision(value: unknown): ManagerMissionGraphDecis
     rawTasks.map(normalizeTask).filter(Boolean) as MissionGenesisTask[],
   );
   if (tasks.length !== rawTasks.length) {
-    throw new Error("Every generated human task requires at least two distinct execution steps and a complete task contract.");
+    throw new Error(`Every generated human task requires at least ${MIN_HUMAN_TASK_STEPS} distinct execution steps and a complete task contract.`);
   }
   if (!mission || !checkpoints.length) return null;
   const checkpointKeys = new Set(checkpoints.map((checkpoint) => checkpoint.key));
@@ -503,17 +493,14 @@ function normalizeTask(value: unknown): MissionGenesisTask | null {
       ? { scheduleKey: task.scheduleKey.trim() }
       : {}),
     ownerRole: cleanString(task.ownerRole, "Manager"),
-    workMode: ["artist_action", "collaborative", "manager_work"].includes(String(task.workMode))
+    workMode: ["artist_action", "collaborative"].includes(String(task.workMode))
       ? task.workMode as MissionGenesisTask["workMode"]
       : "artist_action" as MissionGenesisTask["workMode"],
-    intent: ["manager_work", "human_action", "collaborative_draft", "review_approval"].includes(String(task.intent))
+    intent: ["human_action", "collaborative_draft"].includes(String(task.intent))
       ? task.intent as MissionGenesisTask["intent"]
       : null,
     ...(typeof task.readiness === "string" && task.readiness.trim()
       ? { readiness: task.readiness as MissionGenesisTask["readiness"] }
-      : {}),
-    ...(task.reviewTarget && typeof task.reviewTarget === "object"
-      ? { reviewTarget: normalizeReviewTarget(task.reviewTarget as Record<string, unknown>) }
       : {}),
     assigneeUserId: typeof task.assigneeUserId === "string" && task.assigneeUserId.trim() ? task.assigneeUserId.trim() : null,
     assignmentReason: typeof task.assignmentReason === "string" && task.assignmentReason.trim() ? task.assignmentReason.trim().slice(0, 240) : null,
@@ -522,7 +509,7 @@ function normalizeTask(value: unknown): MissionGenesisTask | null {
     steps: distinctStrings(task.steps).slice(0, 6),
     evidenceNeeded: cleanStringArray(task.evidenceNeeded).slice(0, 12),
     completionExpectation: cleanString(task.completionExpectation, ""),
-    completionMode: ["result_note", "manager_draft", "evidence", "approval"].includes(String(task.completionMode))
+    completionMode: ["result_note", "manager_draft"].includes(String(task.completionMode))
       ? task.completionMode as MissionGenesisTask["completionMode"]
       : null,
     deliverableTitle: cleanString(task.deliverableTitle, ""),
@@ -533,21 +520,10 @@ function normalizeTask(value: unknown): MissionGenesisTask | null {
     deadline: normalizeTaskDeadline(task.deadline),
     sourceRefs: cleanStringArray(task.sourceRefs).slice(0, 24),
   };
-  if (!normalized.title || !normalized.primaryCheckpointKey || !normalized.purpose || normalized.steps.length < 2 || !normalized.completionExpectation || !normalized.riskIfLate || !normalized.intent || !normalized.completionMode) return null;
+  if (!normalized.title || !normalized.primaryCheckpointKey || !normalized.purpose || normalized.steps.length < MIN_HUMAN_TASK_STEPS || !normalized.completionExpectation || !normalized.riskIfLate || !normalized.intent || !normalized.completionMode) return null;
   const normalizedTask = normalized as MissionGenesisTask;
-  if (normalizedTask.intent !== "manager_work") normalizeMissionTask(normalizedTask);
+  normalizeMissionTask(normalizedTask);
   return normalizedTask;
-}
-
-function normalizeReviewTarget(value: Record<string, unknown>): ReviewTargetInput | null {
-  const artifactType = value.artifactType === "manager_output" || value.artifactType === "song_document" ? value.artifactType : null;
-  const artifactId = cleanString(value.artifactId, "");
-  const status = ["draft", "ready_for_review", "accepted", "needs_revision"].includes(String(value.status))
-    ? value.status as ReviewTargetInput["status"]
-    : null;
-  if (!artifactType || !artifactId || !status) return null;
-  const versionId = typeof value.versionId === "string" && value.versionId.trim() ? value.versionId.trim() : null;
-  return { artifactType, artifactId, versionId, status };
 }
 
 const releaseTaskScheduleKeys = new Set([
