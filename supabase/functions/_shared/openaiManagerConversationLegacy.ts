@@ -111,18 +111,18 @@ const checkpointSchema = {
 const taskSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["title", "scheduleKey", "ownerRole", "workMode", "intent", "assigneeUserId", "assignmentReason", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "deadline", "sourceRefs"],
+  required: ["title", "scheduleKey", "ownerRole", "workMode", "intent", "readiness", "reviewTarget", "assigneeUserId", "assignmentReason", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "deadline", "sourceRefs"],
   properties: {
     title: { type: "string" },
     scheduleKey: { type: "string" },
     ownerRole: { type: "string" },
     workMode: { type: "string", enum: ["artist_action", "collaborative", "manager_work"] },
     intent: { type: "string", enum: ["manager_work", "human_action", "collaborative_draft", "review_approval"] },
-    readiness: { type: "string", enum: ["preparing", "ready", "needs_revision", "completed", "blocked"] },
+    readiness: { type: ["string", "null"], enum: ["preparing", "ready", "needs_revision", "completed", "blocked", null] },
     reviewTarget: {
       type: ["object", "null"],
       additionalProperties: false,
-      required: ["artifactType", "artifactId", "status"],
+      required: ["artifactType", "artifactId", "versionId", "status"],
       properties: {
         artifactType: { type: "string", enum: ["manager_output", "song_document"] },
         artifactId: { type: "string" },

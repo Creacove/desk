@@ -32,6 +32,21 @@ const musicSubjectGrantMigrationPath = join(
 );
 
 describe("OpenAI Manager Conversation Router", () => {
+  it("keeps every strict object schema compatible with OpenAI structured outputs", () => {
+    const visit = (node: unknown, path = "root") => {
+      if (!node || typeof node !== "object") return;
+      const schema = node as { type?: unknown; properties?: Record<string, unknown>; required?: string[]; items?: unknown };
+      const isObject = schema.type === "object" || (Array.isArray(schema.type) && schema.type.includes("object"));
+      if (isObject && schema.properties) {
+        expect([...(schema.required || [])].sort(), `${path}.required`).toEqual(Object.keys(schema.properties).sort());
+        for (const [key, value] of Object.entries(schema.properties)) visit(value, `${path}.${key}`);
+      }
+      if (schema.items) visit(schema.items, `${path}[]`);
+    };
+
+    visit(managerConversationJsonSchema.schema);
+  });
+
   it("defines the document text normalizer used while loading focused song context", () => {
     expect(songDocumentDraftSource).toContain("function cleanLongText");
     expect(songDocumentDraftSource).toContain("cleanLongText(metadata.body, 60_000)");
