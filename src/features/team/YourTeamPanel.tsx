@@ -284,7 +284,7 @@ export function YourTeamPanel({
     <section data-testid="your-team-panel" className="w-full">
       <TeamHeading artistName={artistName} countLabel={`${currentCapability.occupiedSeats} of ${seatLimit} people`} />
 
-      {error ? <p role="alert" className="mb-4 text-[12px] font-medium text-destructive">{error.message}</p> : null}
+      {error && error.scope !== "invite" ? <p role="alert" className="mb-4 text-[12px] font-medium text-destructive">{error.message}</p> : null}
       {mutationError ? <p role="alert" className="mb-4 text-[12px] font-medium text-destructive">{mutationError}</p> : null}
       {mutationNotice ? <p role="status" className="mb-4 text-[12px] font-semibold text-brand-accent">{mutationNotice}</p> : null}
 
@@ -389,17 +389,20 @@ export function YourTeamPanel({
       ) : null}
 
       {isOwner && inviteOpen ? (
-        <section aria-labelledby="team-invite-heading" className="mt-7 border-t border-foreground/8 pt-5">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <h3 id="team-invite-heading" className="font-display text-[18px] font-semibold tracking-[-0.02em] text-foreground">Invite someone</h3>
+        <section aria-labelledby="team-invite-heading" className="mt-7 border-t border-foreground/8 pt-6">
+          <div className="flex max-w-2xl flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 id="team-invite-heading" className="font-display text-[20px] font-semibold tracking-[-0.02em] text-foreground">Invite someone</h3>
+              <p className="mt-1 text-[12px] font-medium text-muted-foreground">They’ll get a link to join {artistName}’s team.</p>
+            </div>
             <Button type="button" variant="ghost" size="sm" onClick={closeInviteForm}>Cancel</Button>
           </div>
           {seatsFull ? (
-            <p className="mt-3 rounded-[12px] bg-foreground/[0.035] px-3.5 py-3 text-[12px] font-semibold text-muted-foreground">All {seatLimit} people are already here or invited.</p>
+            <p className="mt-4 max-w-2xl rounded-[12px] bg-foreground/[0.035] px-3.5 py-3 text-[12px] font-semibold text-muted-foreground">All {seatLimit} people are already here or invited.</p>
           ) : (
-            <form className="mt-4 grid gap-4" aria-label="Invite teammate" onSubmit={submitInvite}>
+            <form className="mt-5 grid max-w-2xl gap-5" aria-label="Invite teammate" onSubmit={submitInvite}>
               <label className="grid gap-2 text-[11px] font-semibold text-foreground" htmlFor="team-invite-email">
-                Email address
+                Their email
                 <input
                   id="team-invite-email"
                   aria-label="Email address"
@@ -413,7 +416,7 @@ export function YourTeamPanel({
                   placeholder="teammate@example.com"
                 />
               </label>
-              <TeamRolePicker value={inviteDraft} onChange={(next) => setInviteDraft((current) => ({ ...current, ...next }))} disabled={invitePending} />
+              <TeamRolePicker value={inviteDraft} onChange={(next) => setInviteDraft((current) => ({ ...current, ...next }))} disabled={invitePending} detailsInitiallyOpen={false} />
               {error?.scope === "invite" ? <p role="alert" className="text-[12px] font-semibold text-destructive">{error.message}</p> : null}
               <div className="flex flex-wrap items-center gap-3">
                 <Button type="submit" pending={invitePending} disabled={invitePending}>Send invitation</Button>

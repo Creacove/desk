@@ -169,6 +169,7 @@ export function TeamFirstRunScreen({
                     disabled={pending}
                     titleLabel="Operating title"
                     responsibilitiesLabel="Responsibilities"
+                    detailsInitiallyOpen
                   />
                 </div>
 
@@ -211,6 +212,7 @@ export function TeamFirstRunScreen({
                     disabled={pending || Boolean(inviteLink)}
                     titleLabel="Invite role"
                     responsibilitiesLabel="Invite responsibilities"
+                    detailsInitiallyOpen
                   />
                   {error ? <p role="alert" className="text-[12px] font-semibold text-destructive">{error}</p> : null}
                   {inviteLink ? (

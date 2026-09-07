@@ -100,7 +100,9 @@ export function getNextArtistTask(tasks: MissionTaskViewModel[], checkpoints: Mi
 }
 
 export function isOpenArtistTask(task: MissionTaskViewModel) {
-  return resolveTaskWorkMode(task) !== "manager_work" && !isTaskPreparing(task) && !taskIsDone(task);
+  const intent = resolveTaskIntent(task);
+  const waitingForReviewArtifact = intent === "review_approval" && isTaskPreparing(task);
+  return resolveTaskWorkMode(task) !== "manager_work" && !waitingForReviewArtifact && !taskIsDone(task);
 }
 
 export function taskIsDone(task: MissionTaskViewModel) {
@@ -220,11 +222,11 @@ export function managerDraftNeedsRevision(task: MissionTaskViewModel) {
 
 export function getTaskPrimaryLabel(task: MissionTaskViewModel, approved: boolean) {
   if (task.intent === "review_approval") {
-    if (!isReviewTaskReady(task)) return "Draft is being prepared";
+    if (!isReviewTaskReady(task)) return "Review not ready";
     if (!approved) return "Review draft";
     return "Approved";
   }
-  if (task.intent === "collaborative_draft" && task.readiness === "preparing") return "Draft is being prepared";
+  if (task.intent === "collaborative_draft" && task.readiness === "preparing") return "Work with Manager";
   if (task.approvalState === "needs approval" && !approved) return "Review & approve";
   if (resolveTaskCompletionMode(task) === "manager_draft" && (!task.managerDraft || managerDraftNeedsRevision(task))) return "Work with Manager";
   if (resolveTaskCompletionMode(task) === "result_note") return "Add result";

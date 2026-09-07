@@ -3,6 +3,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { MissionsWorkspace } from "./features/missions/MissionScreens";
+import { getNextArtistTask } from "./features/missions/missionModel";
 import type { MissionTaskViewModel, MissionViewModel } from "./types/cleanProduction";
 
 afterEach(cleanup);
@@ -12,7 +13,7 @@ describe("mission review task safety", () => {
     renderMission(reviewTask({ readiness: "preparing", reviewTarget: undefined }));
 
     const dialog = screen.getByRole("dialog", { name: "Review your artist direction" });
-    expect(within(dialog).getByText("Draft is being prepared")).toBeInTheDocument();
+    expect(within(dialog).getByText("Review not ready yet")).toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: "Start" })).not.toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: "Already done" })).not.toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: "Review draft" })).not.toBeInTheDocument();
@@ -55,6 +56,33 @@ describe("mission review task safety", () => {
     const dialog = screen.getByRole("dialog", { name: "Review your artist direction" });
     expect(within(dialog).getByRole("button", { name: "Work with Manager" })).toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+  });
+
+  it("lets a collaborative task start with Manager while its draft is pending", () => {
+    const onWorkWithManager = vi.fn();
+    renderMission(reviewTask({
+      intent: "collaborative_draft",
+      readiness: "preparing",
+      completionMode: "manager_draft",
+      reviewTarget: undefined,
+      managerDraft: undefined,
+    }), { onWorkWithManager });
+
+    const dialog = screen.getByRole("dialog", { name: "Review your artist direction" });
+    expect(within(dialog).getByRole("button", { name: "Work with Manager" })).toBeInTheDocument();
+    expect(within(dialog).queryByTestId("mission-task-preparing")).not.toBeInTheDocument();
+  });
+
+  it("keeps a pending collaborative task as the next artist move", () => {
+    const mission = reviewTask({
+      intent: "collaborative_draft",
+      readiness: "preparing",
+      completionMode: "manager_draft",
+      reviewTarget: undefined,
+      managerDraft: undefined,
+    });
+
+    expect(getNextArtistTask(mission.tasks ?? [], mission.checkpoints ?? [], [])?.id).toBe("review-task");
   });
 });
 

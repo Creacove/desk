@@ -290,11 +290,11 @@ export function TaskSheet({
               <Check className="h-4 w-4" />
               {reviewApproved ? "Approved" : "Done"}
             </div>
-          ) : preparing ? (
+          ) : preparing && taskIntent === "review_approval" ? (
             <div data-testid="mission-task-preparing" className="mt-7 rounded-[14px] bg-foreground/[0.035] px-4 py-4">
-              <p className="text-[13px] font-semibold text-foreground">Draft is being prepared</p>
+              <p className="text-[13px] font-semibold text-foreground">Review not ready yet</p>
               <p className="mt-1 text-[12px] font-medium leading-relaxed text-muted-foreground">
-                The Manager is finishing this. You’ll be able to review it here when it’s ready.
+                Desk will show the review here when the Manager has a draft for you.
               </p>
             </div>
           ) : unavailable ? (

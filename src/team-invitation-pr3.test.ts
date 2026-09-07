@@ -59,6 +59,14 @@ describe("PR3 invitation boundary", () => {
     expect(config).toMatch(/\[functions\.preview-team-invitation\]\s*verify_jwt = false/);
   });
 
+  it("qualifies the pgcrypto hash in both live invitation functions", () => {
+    const migration = readFileSync(join(process.cwd(), "supabase/migrations/20260907070520_fix_team_invitation_email_hash.sql"), "utf8");
+    expect(migration).toContain("extensions.digest(");
+    expect(migration).toContain("replace(");
+    expect(migration).toContain("invite_account_member_v1(uuid, uuid, text, text, text, text[])");
+    expect(migration).toContain("rotate_account_invitation_v1(uuid, uuid, text)");
+  });
+
   it("emails an invite only after the database mutation and keeps a copy-link result when delivery fails", async () => {
     const order: string[] = [];
     const sendInvitationEmail = vi.fn().mockImplementation(async () => { order.push("email"); });
