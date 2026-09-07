@@ -58,6 +58,16 @@ describe("YourTeamPanel", () => {
     expect(screen.queryByText("Reserved")).not.toBeInTheDocument();
   });
 
+  it("keeps optional role details out of the first invite step", () => {
+    renderPanel();
+
+    fireEvent.click(screen.getByRole("button", { name: "Invite teammate" }));
+
+    expect(screen.getByRole("button", { name: "Adjust details" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Operating title")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Add responsibility")).not.toBeInTheDocument();
+  });
+
   it("keeps the roster read only for a member", async () => {
     renderPanel({ viewerUserId: member.userId });
 
