@@ -436,6 +436,113 @@ function safeRoute(url) {
 // supabase/functions/manager-conversation/index.ts
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+// supabase/functions/_shared/missionTaskContract.ts
+var MISSION_TASK_INTENTS = [
+  "manager_work",
+  "human_action",
+  "collaborative_draft",
+  "review_approval"
+];
+var MISSION_TASK_COMPLETION_MODES = [
+  "result_note",
+  "manager_draft",
+  "evidence",
+  "approval"
+];
+var MISSION_TASK_READINESS = [
+  "preparing",
+  "ready",
+  "needs_revision",
+  "completed",
+  "blocked"
+];
+var MissionTaskContractError = class extends Error {
+  code = "MISSION_TASK_CONTRACT_INVALID";
+  constructor(message) {
+    super(message);
+    this.name = "MissionTaskContractError";
+  }
+};
+function normalizeMissionTask(input) {
+  const intent = input.intent;
+  if (!isMissionTaskIntent(intent)) {
+    throw new MissionTaskContractError("Every visible task requires an explicit intent.");
+  }
+  const completionMode = normalizeCompletionMode(input.completionMode);
+  const reviewTarget = normalizeReviewTarget(input.reviewTarget);
+  if (intent === "manager_work") {
+    throw new MissionTaskContractError("Manager work must remain in the Manager read and cannot be a visible human task.");
+  }
+  if (completionMode === "approval" && intent !== "review_approval") {
+    throw new MissionTaskContractError("Approval completion requires the review_approval intent and a versioned review target.");
+  }
+  if (intent !== "review_approval" && reviewTarget) {
+    throw new MissionTaskContractError("Only review_approval tasks may carry a review target.");
+  }
+  if (intent === "collaborative_draft") {
+    if (input.workMode !== "collaborative") {
+      throw new MissionTaskContractError("Collaborative drafts require collaborative workMode.");
+    }
+    if (completionMode !== "manager_draft") {
+      throw new MissionTaskContractError("Collaborative drafts require manager_draft completionMode.");
+    }
+  }
+  if (intent === "review_approval") {
+    if (!reviewTarget) {
+      throw new MissionTaskContractError("Review tasks require a review target.");
+    }
+    if (reviewTarget.status !== "ready_for_review") {
+      throw new MissionTaskContractError("Review tasks require a review target that is ready_for_review.");
+    }
+    if (completionMode !== "approval") {
+      throw new MissionTaskContractError("Review tasks require approval completionMode.");
+    }
+  }
+  const readiness = normalizeReadiness(input.readiness, intent);
+  if (intent === "review_approval" && readiness !== "ready") {
+    throw new MissionTaskContractError("Review tasks require ready readiness.");
+  }
+  return {
+    title: input.title,
+    purpose: input.purpose,
+    steps: input.steps,
+    ownerRole: input.ownerRole,
+    workMode: input.workMode,
+    completionMode,
+    intent,
+    readiness,
+    ...reviewTarget ? {
+      reviewTarget
+    } : {}
+  };
+}
+function isMissionTaskIntent(value) {
+  return typeof value === "string" && MISSION_TASK_INTENTS.includes(value);
+}
+function normalizeCompletionMode(value) {
+  if (value === "attestation") return "result_note";
+  if (typeof value === "string" && MISSION_TASK_COMPLETION_MODES.includes(value)) {
+    return value;
+  }
+  throw new MissionTaskContractError("Every visible task requires a valid completionMode.");
+}
+function normalizeReadiness(value, intent) {
+  if (value && MISSION_TASK_READINESS.includes(value)) return value;
+  return intent === "collaborative_draft" ? "preparing" : "ready";
+}
+function normalizeReviewTarget(value) {
+  if (!value) return void 0;
+  if (!value.artifactId.trim() || !value.artifactType || !value.versionId?.trim() || !value.status) {
+    throw new MissionTaskContractError("Review target must include artifact type, artifact ID, immutable version, and status.");
+  }
+  return {
+    artifactType: value.artifactType,
+    artifactId: value.artifactId,
+    versionId: value.versionId,
+    status: value.status
+  };
+}
+
 // supabase/functions/_shared/openaiManagerConversationLegacy.ts
 var stringArraySchema = {
   type: "array",
@@ -530,6 +637,7 @@ var taskSchema = {
     "scheduleKey",
     "ownerRole",
     "workMode",
+    "intent",
     "assigneeUserId",
     "assignmentReason",
     "primaryCheckpointKey",
@@ -564,6 +672,64 @@ var taskSchema = {
         "manager_work"
       ]
     },
+    intent: {
+      type: "string",
+      enum: [
+        "manager_work",
+        "human_action",
+        "collaborative_draft",
+        "review_approval"
+      ]
+    },
+    readiness: {
+      type: "string",
+      enum: [
+        "preparing",
+        "ready",
+        "needs_revision",
+        "completed",
+        "blocked"
+      ]
+    },
+    reviewTarget: {
+      type: [
+        "object",
+        "null"
+      ],
+      additionalProperties: false,
+      required: [
+        "artifactType",
+        "artifactId",
+        "status"
+      ],
+      properties: {
+        artifactType: {
+          type: "string",
+          enum: [
+            "manager_output",
+            "song_document"
+          ]
+        },
+        artifactId: {
+          type: "string"
+        },
+        versionId: {
+          type: [
+            "string",
+            "null"
+          ]
+        },
+        status: {
+          type: "string",
+          enum: [
+            "draft",
+            "ready_for_review",
+            "accepted",
+            "needs_revision"
+          ]
+        }
+      }
+    },
     assigneeUserId: {
       type: [
         "string",
@@ -596,7 +762,8 @@ var taskSchema = {
       enum: [
         "result_note",
         "manager_draft",
-        "evidence"
+        "evidence",
+        "approval"
       ]
     },
     deliverableTitle: {
@@ -957,8 +1124,8 @@ function buildManagerConversationInstructions(playbookInstructions = "") {
     "For an explicitly detailed or day-to-day mission request, keep one bounded route (normally no more than 14 human Tasks), keep responseBody concise, and put the detail into ordered executable Task steps. Never let the response become so large that the structured JSON is cut off.",
     "Never create lightweight mission/task work. Do not emit one task with a duplicate checkpoint. If any mission work is created or updated, provide mission identity, checkpoint decision rules, task steps, completion expectations, riskIfLate, sourceRefs, and permission requests.",
     "Use outcome activate_mission for new missions. Use outcome update_existing_mission for changes to existing missions, including adding tasks or checkpoints to existing work; provide existingMissionId and a complete revised plan. In an attached song conversation, existingMissionId must equal the attached linked mission ID.",
-    "Every new task must declare workMode: artist_action for work the artist/team performs or reports, or collaborative for work the artist/team and Manager build or approve together. A manager_draft task must be collaborative. Do not generate manager_work tasks; put Manager-only analysis in checkpoint.managerRead. Tasks may be empty when nothing is needed from the artist.",
-    "Every new task must declare its completion contract: result_note for an observable user-reported outcome or manager_draft when you can produce the substantive artifact in this chat. The legacy evidence value is compatibility-only; uploads are optional context and must never gate work.",
+    "Every new task must declare one intent: human_action for work the artist/team performs or reports, collaborative_draft for substantive work Desk prepares with the artist/team, and review_approval only when the runtime supplies a ready artifact target and immutable version. Manager-only analysis belongs in checkpoint.managerRead and must not be a visible task. A collaborative_draft must use collaborative workMode and manager_draft completionMode.",
+    "Every new task must declare its completion contract: result_note for an observable user-reported outcome, manager_draft for a substantive artifact prepared in this chat, or approval for a typed review decision. The legacy evidence value is compatibility-only; uploads are optional context and must never gate work.",
     "When taskContext is present, work on that task inside this conversation. Produce a usable draft in responseBody, cover its deliverable requirements, state assumptions, and ask at most one question that materially changes the draft.",
     "If user-controlled context is missing, return one context question by default (or at most three tightly related questions that unlock the same decision) and no missionGraphDecisions. Include recommendedAnswer and recommendationReason so an inexperienced artist can accept your best judgment or say they are unsure.",
     "Return createdWork only for already-known concrete non-mission artifacts. For mission/task creates and updates, prefer missionGraphDecisions and let the server emit canonical createdWork after persistence. Use proposedActions for internal next steps that the app can later approve or execute.",
@@ -1123,7 +1290,19 @@ function normalizeTask(value) {
       "artist_action",
       "collaborative",
       "manager_work"
-    ].includes(String(task.workMode)) ? task.workMode : task.completionMode === "manager_draft" ? "collaborative" : cleanString(task.ownerRole, "Manager").trim().toLowerCase() === "manager" ? "manager_work" : "artist_action",
+    ].includes(String(task.workMode)) ? task.workMode : "artist_action",
+    intent: [
+      "manager_work",
+      "human_action",
+      "collaborative_draft",
+      "review_approval"
+    ].includes(String(task.intent)) ? task.intent : null,
+    ...typeof task.readiness === "string" && task.readiness.trim() ? {
+      readiness: task.readiness
+    } : {},
+    ...task.reviewTarget && typeof task.reviewTarget === "object" ? {
+      reviewTarget: normalizeReviewTarget2(task.reviewTarget)
+    } : {},
     assigneeUserId: typeof task.assigneeUserId === "string" && task.assigneeUserId.trim() ? task.assigneeUserId.trim() : null,
     assignmentReason: typeof task.assignmentReason === "string" && task.assignmentReason.trim() ? task.assignmentReason.trim().slice(0, 240) : null,
     primaryCheckpointKey: cleanString(task.primaryCheckpointKey, ""),
@@ -1134,8 +1313,9 @@ function normalizeTask(value) {
     completionMode: [
       "result_note",
       "manager_draft",
-      "evidence"
-    ].includes(String(task.completionMode)) ? task.completionMode : "result_note",
+      "evidence",
+      "approval"
+    ].includes(String(task.completionMode)) ? task.completionMode : null,
     deliverableTitle: cleanString(task.deliverableTitle, ""),
     deliverableRequirements: cleanStringArray(task.deliverableRequirements).slice(0, 12),
     managerResponsibility: cleanString(task.managerResponsibility, ""),
@@ -1144,7 +1324,28 @@ function normalizeTask(value) {
     deadline: normalizeTaskDeadline(task.deadline),
     sourceRefs: cleanStringArray(task.sourceRefs).slice(0, 24)
   };
-  return normalized.title && normalized.primaryCheckpointKey && normalized.purpose && normalized.steps.length >= 2 && normalized.completionExpectation && normalized.riskIfLate ? normalized : null;
+  if (!normalized.title || !normalized.primaryCheckpointKey || !normalized.purpose || normalized.steps.length < 2 || !normalized.completionExpectation || !normalized.riskIfLate || !normalized.intent || !normalized.completionMode) return null;
+  const normalizedTask = normalized;
+  if (normalizedTask.intent !== "manager_work") normalizeMissionTask(normalizedTask);
+  return normalizedTask;
+}
+function normalizeReviewTarget2(value) {
+  const artifactType = value.artifactType === "manager_output" || value.artifactType === "song_document" ? value.artifactType : null;
+  const artifactId = cleanString(value.artifactId, "");
+  const status = [
+    "draft",
+    "ready_for_review",
+    "accepted",
+    "needs_revision"
+  ].includes(String(value.status)) ? value.status : null;
+  if (!artifactType || !artifactId || !status) return null;
+  const versionId = typeof value.versionId === "string" && value.versionId.trim() ? value.versionId.trim() : null;
+  return {
+    artifactType,
+    artifactId,
+    versionId,
+    status
+  };
 }
 var releaseTaskScheduleKeys = /* @__PURE__ */ new Set([
   "distributor_delivery",
@@ -1793,6 +1994,12 @@ async function writeMissionPlan(db, input, context, missionId, decision) {
     if (linkError) throw linkError;
   }
   for (const task of decision.tasks) {
+    if (task.intent === "review_approval") {
+      throw new Error("Mission Genesis cannot create an approval task before a runtime artifact has a ready immutable version.");
+    }
+    if (task.intent === "manager_work") {
+      throw new Error("Mission Genesis cannot expose Manager work as a human task.");
+    }
     const assignment = normalizeTaskAssignment(task, {
       roster,
       teamEnabled
@@ -1810,7 +2017,17 @@ async function writeMissionPlan(db, input, context, missionId, decision) {
       title: task.title,
       schedule_key: task.scheduleKey || null,
       owner_role: task.ownerRole || "Manager",
+      // The row is staged as Manager-owned until task_steps have been written
+      // in this HTTP workflow. The intent becomes the generated task contract
+      // in activateHumanTask below; a crash cannot expose half-written human
+      // work as executable Today work.
       work_mode: "manager_work",
+      task_intent: "manager_work",
+      readiness: "ready",
+      review_target_id: null,
+      review_target_type: null,
+      review_target_version_id: null,
+      review_target_status: null,
       assignee_user_id: null,
       assignment_reason: null,
       assignment_source: null,
@@ -1850,7 +2067,7 @@ async function writeMissionPlan(db, input, context, missionId, decision) {
       })));
       if (stepError) throw stepError;
     }
-    await activateHumanTask(db, taskRow.id, task.workMode, assignment);
+    await activateHumanTask(db, taskRow.id, task.workMode, task.intent, assignment);
   }
   for (const permission of decision.permissionRequests) {
     const { error } = await db.from("permission_requests").insert({
@@ -1899,6 +2116,7 @@ function unique(values) {
 async function preflightMissionTasks(db, context, decisions) {
   for (const task of decisions.flatMap((decision) => decision.tasks)) {
     if (task.workMode === "manager_work") continue;
+    const normalizedTask = normalizeMissionTask(task);
     const { error } = await db.rpc("assert_generated_human_task_execution_contract_v1", {
       p_task: {
         scope: "mission",
@@ -1906,10 +2124,12 @@ async function preflightMissionTasks(db, context, decisions) {
         createdFromRunId: context.runId,
         title: task.title,
         ownerRole: task.ownerRole,
-        workMode: task.workMode,
+        workMode: normalizedTask.workMode,
+        taskIntent: normalizedTask.intent,
+        readiness: normalizedTask.readiness,
         purpose: task.purpose,
         completionExpectation: task.completionExpectation,
-        completionMode: task.completionMode,
+        completionMode: normalizedTask.completionMode,
         managerResponsibility: task.managerResponsibility,
         userResponsibility: task.userResponsibility,
         riskIfLate: task.riskIfLate
@@ -1919,10 +2139,13 @@ async function preflightMissionTasks(db, context, decisions) {
     if (error) throw error;
   }
 }
-async function activateHumanTask(db, taskId, workMode, assignment) {
+async function activateHumanTask(db, taskId, workMode, intent, assignment) {
   if (workMode === "manager_work") return;
   const { error } = await db.from("tasks").update({
     work_mode: workMode,
+    task_intent: intent,
+    readiness: intent === "collaborative_draft" ? "preparing" : "ready",
+    status: intent === "collaborative_draft" ? "in_progress" : "proposed",
     assignee_user_id: assignment.assigneeUserId,
     assignment_reason: assignment.assignmentReason,
     assignment_source: assignment.assignmentSource,
@@ -11219,7 +11442,7 @@ async function buildManagerConversationPacket(db, input, conversationId, message
     selectMany(db, "memory_entries", "id,scope,kind,content,source_type,confidence,reason,mission_id,conversation_id,created_at", input, 12),
     selectMany(db, "agent_reports", "id,agent_key,mission_id,mission_pattern_key,summary,confidence,limitations,finding,evidence_missing,risk_or_opportunity,recommended_internal_action,permission_required,suggested_follow_up,created_at", input, 8),
     selectMany(db, "missions", "id,title,objective,reason,status,priority,progress,summary,pattern_name,current_recommendation,required_evidence,missing_evidence,change_conditions,review_point,created_at", input, 12),
-    selectMany(db, "tasks", "id,mission_id,primary_checkpoint_id,title,owner_role,work_mode,status,purpose,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late", input, 20),
+    selectMany(db, "tasks", "id,mission_id,primary_checkpoint_id,title,owner_role,work_mode,task_intent,readiness,review_target_id,review_target_type,review_target_version_id,review_target_status,status,purpose,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late", input, 20),
     selectMany(db, "conversations", "id,topic,status,summary,last_update_at,created_at", input, 12),
     selectConversationHistory(db, input, conversationId, 12),
     selectMany(db, "manager_intelligence_packets", "id,packet_type,profile_projection_json,signal_snapshot_json,strategic_diagnosis_json,asset_reads_json,market_reads_json,mission_seed_json,conversation_memory_seed_json,supporting_evidence_json,internal_only_json,created_at", input, 1)
@@ -11478,41 +11701,29 @@ async function loadTaskMissionId(db, input) {
 }
 async function persistTaskDraftOutput(db, input, conversationId, runId, output) {
   if (!input.taskId || output.contextQuestions.length) return null;
-  const { data: task, error: taskError } = await db.from("tasks").select("id,mission_id,title,completion_mode,deliverable_title,deliverable_requirements,completion_expectation").eq("id", input.taskId).eq("account_id", input.accountId).eq("artist_workspace_id", input.artistWorkspaceId).eq("artist_id", input.artistId).maybeSingle();
+  const { data: task, error: taskError } = await db.from("tasks").select("id,mission_id,title,task_intent,completion_mode,deliverable_title,deliverable_requirements,completion_expectation").eq("id", input.taskId).eq("account_id", input.accountId).eq("artist_workspace_id", input.artistWorkspaceId).eq("artist_id", input.artistId).maybeSingle();
   if (taskError) throw taskError;
-  if (!task || task.completion_mode !== "manager_draft") return null;
-  const { data: current, error: currentError } = await db.from("manager_outputs").select("id").eq("artist_workspace_id", input.artistWorkspaceId).eq("output_type", "task_draft").eq("subject_type", "task").eq("subject_id", input.taskId).eq("is_current", true).maybeSingle();
-  if (currentError) throw currentError;
-  if (current?.id) {
-    const { error } = await db.from("manager_outputs").update({
-      is_current: false
-    }).eq("id", current.id);
-    if (error) throw error;
-  }
+  if (!task || task.completion_mode !== "manager_draft" && task.task_intent !== "review_approval") return null;
   const title = task.deliverable_title || task.title;
-  const { data: draft, error: draftError } = await db.from("manager_outputs").insert({
-    account_id: input.accountId,
-    artist_workspace_id: input.artistWorkspaceId,
-    artist_id: input.artistId,
-    conversation_id: conversationId,
-    mission_id: task.mission_id,
-    subject_type: "task",
-    subject_id: input.taskId,
-    output_type: "task_draft",
-    dominant_situation: "task_completion",
-    layout_pattern: "working_draft",
-    tone: "direct",
-    summary: output.summary,
-    primary_recommendation_json: {
+  const { data: persistedDraft, error: draftError } = await db.rpc("persist_manager_task_draft_v1", {
+    p_account_id: input.accountId,
+    p_artist_workspace_id: input.artistWorkspaceId,
+    p_artist_id: input.artistId,
+    p_task_id: input.taskId,
+    p_conversation_id: conversationId,
+    p_created_from_run_id: runId,
+    p_title: title,
+    p_summary: output.summary,
+    p_primary_recommendation_json: {
       recommendation: output.responseBody
     },
-    confidence_json: {
+    p_confidence_json: {
       confidence: output.confidence
     },
-    supporting_evidence_json: output.evidenceIds.map((id) => ({
+    p_supporting_evidence_json: output.evidenceIds.map((id) => ({
       id
     })),
-    render_json: {
+    p_render_json: {
       title,
       content: output.responseBody,
       status: "draft",
@@ -11521,23 +11732,12 @@ async function persistTaskDraftOutput(db, input, conversationId, runId, output) 
       assumptions: output.limitations,
       evidenceIds: output.evidenceIds,
       conversationId
-    },
-    supersedes_output_id: current?.id ?? null,
-    is_current: true,
-    created_from_run_id: runId
-  }).select("id").single();
-  if (draftError) throw draftError;
-  const { error: linkError } = await db.from("artifact_links").insert({
-    account_id: input.accountId,
-    artist_workspace_id: input.artistWorkspaceId,
-    artist_id: input.artistId,
-    source_type: "manager_output",
-    source_id: draft.id,
-    target_type: "task",
-    target_id: input.taskId,
-    relationship: "response_to"
+    }
   });
-  if (linkError) throw linkError;
+  if (draftError) throw draftError;
+  if (!isRecord10(persistedDraft) || typeof persistedDraft.artifactId !== "string" || !persistedDraft.artifactId) {
+    throw new Error("Manager draft was not saved as a reviewable version.");
+  }
   await writeWorkspaceEvent(db, {
     accountId: input.accountId,
     artistWorkspaceId: input.artistWorkspaceId,
@@ -11546,7 +11746,7 @@ async function persistTaskDraftOutput(db, input, conversationId, runId, output) 
     summary: `${title} is ready to review.`,
     targetType: "task",
     targetId: input.taskId,
-    dedupeKey: `manager-task-draft:${draft.id}`,
+    dedupeKey: `manager-task-draft:${persistedDraft.artifactId}`,
     displayMode: "toast",
     refreshScope: [
       "missions",
@@ -11559,10 +11759,10 @@ async function persistTaskDraftOutput(db, input, conversationId, runId, output) 
     title,
     body: "Manager draft saved to this task. Open the task to review or submit this version.",
     content: output.responseBody,
-    managerOutputId: draft.id,
+    managerOutputId: persistedDraft.artifactId,
     id: input.taskId,
     parentMissionId: task.mission_id ?? void 0,
-    status: current?.id ? "updated" : "created"
+    status: persistedDraft.status === "already_saved" ? "updated" : "created"
   };
 }
 async function persistDecisionPackageOutput(db, input, conversationId, runId, output) {
