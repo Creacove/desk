@@ -20,11 +20,16 @@ export function TeamRolePicker({
   responsibilitiesLabel?: string;
   detailsInitiallyOpen?: boolean;
 }) {
-  const selectedPreset = useMemo(() => findTeamRolePreset(value), [value]);
+  const selectedPreset = useMemo(() => {
+    const preset = findTeamRolePreset(value);
+    if (preset?.label === "Other" && !value.operatingTitle && !value.responsibilityTags.length) return undefined;
+    return preset;
+  }, [value]);
   const resolvedTitleLabel = titleLabel ?? "Operating title";
   const resolvedResponsibilitiesLabel = responsibilitiesLabel ?? "Add responsibility";
   const [responsibilityInput, setResponsibilityInput] = useState("");
   const [detailsOpen, setDetailsOpen] = useState(() => detailsInitiallyOpen ?? true);
+  const [selectedRoleLabel, setSelectedRoleLabel] = useState<string | null>(() => selectedPreset?.label ?? null);
   const valueTagsKey = value.responsibilityTags.join("|");
 
   useEffect(() => {
@@ -33,11 +38,20 @@ export function TeamRolePicker({
     setResponsibilityInput("");
   }, [valueTagsKey]);
 
+  useEffect(() => {
+    if (value.operatingTitle || value.responsibilityTags.length) {
+      if (selectedRoleLabel !== "Other") setSelectedRoleLabel(selectedPreset?.label ?? null);
+      return;
+    }
+    if (selectedRoleLabel !== "Other") setSelectedRoleLabel(null);
+  }, [selectedPreset, selectedRoleLabel, value.operatingTitle, valueTagsKey]);
+
   function selectPreset(label: string) {
     const preset = findTeamRolePreset(label);
     if (!preset) return;
     setResponsibilityInput("");
     setDetailsOpen(detailsInitiallyOpen ?? true);
+    setSelectedRoleLabel(preset.label);
     onChange({ operatingTitle: preset.operatingTitle || null, responsibilityTags: [...preset.responsibilityTags] });
   }
 
@@ -72,7 +86,7 @@ export function TeamRolePicker({
         <legend className="text-[12px] font-semibold text-foreground">What will they own?</legend>
         <div className="flex flex-wrap gap-2">
           {TEAM_ROLE_PRESETS.map((preset) => {
-            const selected = selectedPreset?.label === preset.label;
+            const selected = selectedRoleLabel === preset.label;
             return (
               <button
                 key={preset.label}
@@ -98,6 +112,8 @@ export function TeamRolePicker({
         <p className="min-w-0 text-[12px] font-medium leading-relaxed text-muted-foreground">
           {selectedPreset?.responsibilityTags.length
             ? <>Starts with {selectedPreset.responsibilityTags.join(", ")}.</>
+            : selectedRoleLabel === "Other"
+              ? "Add a title and the responsibilities they will handle."
             : value.responsibilityTags.length
               ? `${value.responsibilityTags.length} responsibilities selected.`
               : "Choose a role to add a starting set of responsibilities."}
