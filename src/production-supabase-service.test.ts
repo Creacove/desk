@@ -2910,6 +2910,7 @@ describe("production Supabase services", () => {
         {
           conversationId: "conversation-existing",
           body: "Should we move the release date?",
+          retryMessageId: "11111111-1111-4111-8111-111111111111",
           musicSubject: { type: "music_item", id: "music-item-1" },
         },
         {
@@ -2935,6 +2936,7 @@ describe("production Supabase services", () => {
       artistId: workspace.artistId,
       conversationId: "conversation-existing",
       body: "Should we move the release date?",
+      retryMessageId: "11111111-1111-4111-8111-111111111111",
       musicSubject: { type: "music_item", id: "music-item-1" },
     });
     expect(events).toEqual(["Streaming reply."]);

@@ -882,6 +882,7 @@ export type CleanProductionRepositories = {
     loadConversations: () => Promise<ConversationViewModel[]>;
     sendMessage?: (input: {
       conversationId?: string;
+      retryMessageId?: string;
       body: string;
       taskId?: string;
       musicSubject?: ManagerConversationMusicSubject;
@@ -892,6 +893,7 @@ export type CleanProductionRepositories = {
     sendMessageStream?: (
       input: {
         conversationId?: string;
+        retryMessageId?: string;
         body: string;
         taskId?: string;
         musicSubject?: ManagerConversationMusicSubject;

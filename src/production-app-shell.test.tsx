@@ -3174,11 +3174,29 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send to Manager" }));
 
     await act(async () => {
+      handlers.onEvent({
+        type: "conversation.started",
+        conversation: {
+          id: "conv-retry",
+          topic: "Release timing",
+          messages: [{ id: "11111111-1111-4111-8111-111111111111", speaker: "artist", label: "You", body: "Should we move the release?" }],
+        },
+        run: { id: "run-failed", status: "running" },
+      });
       handlers.onEvent({ type: "error", message: "Manager conversation failed." });
     });
 
     expect(await screen.findByText("Manager conversation failed.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Retry Manager message" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry Manager message" }));
+    expect(screen.getAllByTestId("manager-message-artist")).toHaveLength(1);
+    expect(repositories.manager.sendMessageStream).toHaveBeenLastCalledWith(
+      {
+        conversationId: "conv-retry",
+        body: "Should we move the release?",
+        retryMessageId: "11111111-1111-4111-8111-111111111111",
+      },
+      expect.any(Object),
+    );
     expect(analyticsMock.trackEvent.mock.calls.some(([name]) => name === "chat message sent")).toBe(false);
   }, 20000);
 

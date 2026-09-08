@@ -1342,9 +1342,11 @@ function CleanProductionWorkspace({
     const conversation = selectedConversation;
     const lastArtistMessage = conversation?.messages.filter((message) => message.speaker === "artist").at(-1);
     if (!conversation || !lastArtistMessage) return Promise.resolve();
-    return sendManagerMessage(lastArtistMessage.body, conversation.id, conversation.topic, conversation.musicSubject
-      ? { musicSubject: { type: conversation.musicSubject.type, id: conversation.musicSubject.id } }
-      : {});
+    return sendManagerMessage(lastArtistMessage.body, conversation.id, conversation.topic, {
+      retryMessageId: lastArtistMessage.id,
+      ...(lastArtistMessage.attachments?.length ? { attachmentIds: lastArtistMessage.attachments.map((attachment) => attachment.id) } : {}),
+      ...(conversation.musicSubject ? { musicSubject: { type: conversation.musicSubject.type, id: conversation.musicSubject.id } } : {}),
+    });
   }
 
   function managerConversationSubjectInput(conversation: ConversationViewModel) {
@@ -1502,6 +1504,7 @@ function CleanProductionWorkspace({
       attachmentIds?: string[];
       taskId?: string;
       musicSubject?: ManagerConversationMusicSubject;
+      retryMessageId?: string;
     } = {},
   ) {
     const trimmedBody = body.trim();
@@ -1531,7 +1534,9 @@ function CleanProductionWorkspace({
         : resolvedMusicSubject
       : undefined;
     const optimisticConversation = conversationId
-      ? withOptimisticManagerMessage(sourceConversation, trimmedBody)
+      ? options.retryMessageId
+        ? withOptimisticManagerRetry(sourceConversation)
+        : withOptimisticManagerMessage(sourceConversation, trimmedBody)
       : createOptimisticManagerConversation(trimmedBody, musicSubjectView);
     const optimisticId = optimisticConversation?.id;
     const lockedTopic = stableTopic ?? sourceConversation?.topic;
@@ -1549,6 +1554,7 @@ function CleanProductionWorkspace({
       const managerInput = {
         body: trimmedBody,
         ...(conversationId ? { conversationId } : {}),
+        ...(options.retryMessageId ? { retryMessageId: options.retryMessageId } : {}),
         ...(options.contextRequestId ? { contextRequestId: options.contextRequestId } : {}),
         ...(options.contextAnswers?.length ? { contextAnswers: options.contextAnswers } : {}),
         ...(options.attachmentIds?.length ? { attachmentIds: options.attachmentIds } : {}),
@@ -2516,6 +2522,8 @@ function CleanProductionWorkspace({
                   const lastArtistMessage = activeConversation.messages.filter((message) => message.speaker === "artist").at(-1);
                   if (lastArtistMessage) {
                     void sendManagerMessage(lastArtistMessage.body, activeConversation.id, activeConversation.topic, {
+                      retryMessageId: lastArtistMessage.id,
+                      ...(lastArtistMessage.attachments?.length ? { attachmentIds: lastArtistMessage.attachments.map((attachment) => attachment.id) } : {}),
                       taskId: managerTaskContextId ?? undefined,
                       ...(activeConversation.musicSubject ? { musicSubject: { type: activeConversation.musicSubject.type, id: activeConversation.musicSubject.id } } : {}),
                     });
@@ -3514,6 +3522,22 @@ function withOptimisticManagerMessage(conversation: ConversationViewModel | unde
         status: "sent",
       },
     ],
+  };
+}
+
+function withOptimisticManagerRetry(conversation: ConversationViewModel | undefined): ConversationViewModel | null {
+  if (!conversation) return null;
+  return {
+    ...conversation,
+    status: "Manager is thinking",
+    lastUpdate: "Now",
+    activeRun: {
+      id: `pending-run-${Date.now()}`,
+      status: "running",
+      streamedText: "",
+      steps: [{ id: "start", label: "Reviewing your request", status: "running" }],
+    },
+    messages: conversation.messages.filter((message) => message.status !== "failed"),
   };
 }
 

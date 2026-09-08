@@ -60,6 +60,7 @@ type ManagerConversationInput = {
   artistWorkspaceId: string;
   artistId: string;
   conversationId?: string;
+  retryMessageId?: string;
   taskId?: string;
   musicSubject?: MusicConversationSubject;
   body: string;
@@ -105,7 +106,7 @@ Deno.serve(withAppErrorCapture("manager-conversation", async (request) => {
     const focusedMusicSubject = await ensureMusicConversationSubjectLink(db, input, conversationId);
     const attachments = await resolveManagerConversationAttachments(db, input, focusedMusicSubject ?? undefined);
     const scopedMissionId = await resolveConversationMissionScope(db, input, conversationId, focusedMusicSubject);
-    const artistMessage = await insertConversationMessage(db, input, conversationId, {
+    const artistMessage = await resolveArtistMessageForRun(db, input, conversationId, {
       speaker: "artist",
       label: "You",
       authored_by_user_id: user.id,
@@ -129,6 +130,7 @@ Deno.serve(withAppErrorCapture("manager-conversation", async (request) => {
       managerConversationPlaybookKeys(packet),
       conversationId,
       runId,
+      focusedMusicSubject,
     );
     enforceExplicitDecisionPackagePolicy(output, input);
     const turnToolNames = safeToolTraceSummary(toolTrace).map((item) => item.tool);
@@ -240,6 +242,9 @@ function validateInput(input: ManagerConversationInput) {
   if (input.conversationId && !UUID_PATTERN.test(input.conversationId)) {
     if (/^pending-conversation-\d+$/i.test(input.conversationId)) input.conversationId = undefined;
     else throw new Error("Manager conversation ID is invalid.");
+  }
+  if (input.retryMessageId && (!UUID_PATTERN.test(input.retryMessageId) || !input.conversationId)) {
+    throw new Error("Manager retry message ID is invalid.");
   }
   input.musicSubject = parseMusicConversationSubject(input.musicSubject) ?? undefined;
 }
@@ -705,6 +710,30 @@ async function insertConversationMessage(db: any, input: ManagerConversationInpu
   return data;
 }
 
+async function resolveArtistMessageForRun(
+  db: any,
+  input: ManagerConversationInput,
+  conversationId: string,
+  message: Record<string, unknown>,
+) {
+  if (!input.retryMessageId) return insertConversationMessage(db, input, conversationId, message);
+  const { data, error } = await db
+    .from("conversation_messages")
+    .select("id,conversation_id,speaker,label,body,authored_by_user_id,metadata,created_at")
+    .eq("id", input.retryMessageId)
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .eq("conversation_id", conversationId)
+    .eq("speaker", "artist")
+    .maybeSingle();
+  if (error) throw error;
+  if (!data || String(data.body ?? "").trim() !== input.body.trim()) {
+    throw new Error("Manager retry message does not match the original conversation message.");
+  }
+  return data;
+}
+
 async function callOpenAIManagerConversation(
   db: any,
   input: ManagerConversationInput,
@@ -713,6 +742,7 @@ async function callOpenAIManagerConversation(
   playbookKeys: PlaybookKey[],
   conversationId: string,
   runId: string | null,
+  focusedMusicSubject: Awaited<ReturnType<typeof ensureMusicConversationSubjectLink>>,
 ) {
   const turn = classifyManagerTurn({ body: input.body, contextAnswers: input.contextAnswers });
   const playbookInstructions = getPlaybooksInstructions(playbookKeys);
@@ -727,7 +757,7 @@ async function callOpenAIManagerConversation(
     endpoint: "https://api.openai.com/v1/responses",
     apiKey: requireEnv("OPENAI_API_KEY"),
     model: Deno.env.get("OPENAI_MANAGER_REASONING_MODEL") || Deno.env.get("OPENAI_MANAGER_CONVERSATION_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5.6-luna",
-    instructions: buildManagerConversationInstructions(playbookInstructions, turn.mode),
+    instructions: buildManagerConversationInstructions(playbookInstructions, turn.mode, input.body),
     context,
     previousResponseId,
     tools,
@@ -744,7 +774,21 @@ async function callOpenAIManagerConversation(
     maxOutputTokens: managerConversationOutputTokenBudget(input.body),
     validateOutputText: async (outputText) => {
       const output = parseManagerConversationOutput(outputText);
-      await preflightManagerMissionGraphTasks(db, runId ?? "", output);
+      enforceExplicitDecisionPackagePolicy(output, input);
+      const violations: string[] = [];
+      try {
+        assertReleasedCatalogManagerPolicy(output, focusedMusicSubject, input.body);
+      } catch (error) {
+        if (!isRecoverableManagerOutputError(error)) throw error;
+        violations.push(error instanceof Error ? error.message : String(error));
+      }
+      try {
+        await preflightManagerMissionGraphTasks(db, runId ?? "", output);
+      } catch (error) {
+        if (!isRecoverableManagerOutputError(error)) throw error;
+        violations.push(error instanceof Error ? error.message : String(error));
+      }
+      if (violations.length) throw new Error(`Manager output admission failed:\n${violations.join("\n")}`);
     },
     outputRepairAttempts: 2,
     shouldRepairOutputError: isRecoverableManagerOutputError,

@@ -100,7 +100,7 @@ describe("OpenAI Manager Conversation Router", () => {
     for (const source of [functionSource, streamFunctionSource]) {
       expect(source).toContain("classifyManagerTurn");
       expect(source).toContain("managerReasoningEffort(turn.mode)");
-      expect(source).toContain("buildManagerConversationInstructions(playbookInstructions, turn.mode)");
+      expect(source).toContain("buildManagerConversationInstructions(playbookInstructions, turn.mode, input.body)");
       expect(source.match(/runManagerAgentLoop\s*\(/g)).toHaveLength(1);
     }
     expect(streamFunctionSource).toContain("managerAnalysisPhaseLabel(turn.mode)");
@@ -510,10 +510,22 @@ describe("OpenAI Manager Conversation Router", () => {
 
   it("applies released/catalog semantic admission before graph persistence in both chat functions", () => {
     for (const source of [functionSource, streamFunctionSource]) {
-      const policyAt = source.indexOf("assertReleasedCatalogManagerPolicy(output");
-      const persistAt = source.indexOf("persistManagerMissionGraphDecisions(db", policyAt);
+      const validationAt = source.indexOf("validateOutputText:");
+      const policyAt = source.indexOf("assertReleasedCatalogManagerPolicy(output", validationAt);
+      const repairAt = source.indexOf("outputRepairAttempts:", validationAt);
+      const finalPolicyAt = source.indexOf("assertReleasedCatalogManagerPolicy(output");
+      const persistAt = source.indexOf("persistManagerMissionGraphDecisions(db", finalPolicyAt);
+      expect(validationAt).toBeGreaterThan(-1);
       expect(policyAt).toBeGreaterThan(-1);
-      expect(persistAt).toBeGreaterThan(policyAt);
+      expect(repairAt).toBeGreaterThan(policyAt);
+      expect(persistAt).toBeGreaterThan(finalPolicyAt);
+    }
+  });
+
+  it("reuses the persisted artist message for an explicit retry in both chat functions", () => {
+    for (const source of [functionSource, streamFunctionSource]) {
+      expect(source).toContain("retryMessageId?: string");
+      expect(source).toContain("resolveArtistMessageForRun(db, input, conversationId");
     }
   });
 

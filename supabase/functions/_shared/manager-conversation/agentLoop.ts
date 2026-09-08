@@ -53,7 +53,7 @@ type ManagerAgentLoopResult = {
 export function isRecoverableManagerOutputError(error: unknown) {
   const message = readErrorMessage(error).toLowerCase();
   if (error instanceof SyntaxError) return true;
-  return /manager conversation output|mission graph|generated_human_task_contract|at least .*execution steps?|execution contract|workoperations|incomplete structured|missing responsebody|unexpected end of json|unterminated string in json/.test(message);
+  return /manager conversation output|mission graph|generated_human_task_contract|at least .*execution steps?|execution contract|released\/catalog policy|released music cannot|workoperations|incomplete structured|missing responsebody|unexpected end of json|unterminated string in json/.test(message);
 }
 
 export type ManagerAgentToolTrace = {
@@ -650,15 +650,44 @@ export async function runManagerAgentLoop(input: ManagerAgentLoopInput): Promise
 }
 
 function buildOutputRepairInstruction(error: unknown) {
-  const detail = readErrorMessage(error).replace(/\s+/g, " ").slice(0, 240);
+  const detail = readErrorMessage(error).replace(/\s+/g, " ").slice(0, 1600);
+  const targetedGuidance = outputRepairGuidance(detail);
   return [
     "Your previous Manager response was incomplete or failed the structured-output contract.",
     detail ? `Validation signal: ${detail}` : "Validation signal: the response was not complete.",
     "Return one complete valid JSON object for the original request now; do not return commentary, markdown, or a partial object.",
+    "Repair every named task or policy violation in the validation signal in this single response while preserving valid work.",
+    targetedGuidance,
     "Keep the work bounded and put detail into executable fields rather than a long response paragraph.",
     "Every visible human Task must contain at least 3 distinct ordered execution steps; content-execution Tasks need at least four concrete steps and must include the setup/format, hook/message, creator action, and finish/distribution direction.",
     "Do not omit required fields, drop a Task, or create a vague placeholder just to fit the response.",
   ].join(" ");
+}
+
+function outputRepairGuidance(detail: string) {
+  const guidance: string[] = [];
+  if (/content_finish_or_distribution_direction_required/i.test(detail)) {
+    guidance.push("For each named content Task, include an explicit final step covering the edit or caption and the exact publish, export, or distribution direction.");
+  }
+  if (/content_hook_or_message_required/i.test(detail)) {
+    guidance.push("For each named content Task, state the opening hook, first line, question, prompt, or text on screen.");
+  }
+  if (/content_setup_or_format_required/i.test(detail)) {
+    guidance.push("For each named content Task, state the concrete scene, framing, camera setup, or visual format.");
+  }
+  if (/content_creator_action_required/i.test(detail)) {
+    guidance.push("For each named content Task, state what the artist physically records, says, shows, performs, edits, or publishes.");
+  }
+  if (/content_requires_at_least_four_execution_steps/i.test(detail)) {
+    guidance.push("Give each named content Task at least four distinct ordered execution steps.");
+  }
+  if (/released\/catalog policy|released music cannot/i.test(detail)) {
+    guidance.push("Remove generic pre-release asset collection from released music; use post-release measurement, audience conversion, campaign optimization, or a specifically named correction or licensing dependency instead.");
+  }
+  if (/review target|review_approval|approval completion/i.test(detail)) {
+    guidance.push("Do not create a review or approval Task unless the runtime supplied a ready immutable artifact target and version; use human_action or collaborative_draft for other work.");
+  }
+  return guidance.join(" ");
 }
 
 const MAX_TOOL_OUTPUT_CHARS = 12_000;

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  buildManagerConversationInstructions,
   managerConversationOutputTokenBudget,
   parseManagerConversationOutput,
 } from "../supabase/functions/_shared/openaiManagerConversation";
@@ -84,6 +85,13 @@ describe("Manager structured-output recovery", () => {
   it("allocates a larger bounded response budget only for explicit detailed mission requests", () => {
     expect(managerConversationOutputTokenBudget(exactRequest)).toBe(12000);
     expect(managerConversationOutputTokenBudget("What should I focus on this week?")).toBe(6000);
+  });
+
+  it("turns a detailed month request into one bounded mission instead of a fragile daily dump", () => {
+    const instructions = buildManagerConversationInstructions("", "normal", "create a detailed plan for this month, don't leave anything out");
+    expect(instructions).toMatch(/one mission/i);
+    expect(instructions).toMatch(/4-8 milestone tasks/i);
+    expect(instructions).toMatch(/group repeated daily actions/i);
   });
 
   it("does not silently drop an orphaned mission task from an otherwise valid response", () => {
@@ -229,6 +237,76 @@ describe("Manager structured-output recovery", () => {
     expect(requests).toHaveLength(2);
     expect(db.rpc).toHaveBeenCalledTimes(2);
     expect(JSON.stringify(requests[1].input)).toMatch(/complete|four|execution contract/i);
+  });
+
+  it("reports every invalid task in one preflight pass so one repair can fix the whole plan", async () => {
+    const parsed = parseManagerConversationOutput(missionOutput([
+      "Set up a vertical phone shot and frame the opening visual.",
+      "Open with the prepared hook and show the song moment.",
+      "Record the performance in one take and trim the dead space.",
+      "Publish the finished post and return the link.",
+    ]));
+    const firstTask = parsed.missionGraphDecisions[0].tasks[0];
+    parsed.missionGraphDecisions[0].tasks = [
+      { ...firstTask, title: "Film the first performance test" },
+      { ...firstTask, title: "Publish the follow-up story" },
+    ];
+    const db = {
+      rpc: vi.fn(async (_name: string, args: Record<string, unknown>) => {
+        const task = args.p_task as Record<string, unknown>;
+        return String(task.title).startsWith("Film")
+          ? { error: { message: "generated_human_task_contract:content_hook_or_message_required" } }
+          : { error: { message: "generated_human_task_contract:content_finish_or_distribution_direction_required" } };
+      }),
+    };
+
+    await expect(preflightManagerMissionGraphTasks(db, "run-1", parsed)).rejects.toThrow(
+      /Film the first performance test[\s\S]*content_hook_or_message_required[\s\S]*Publish the follow-up story[\s\S]*content_finish_or_distribution_direction_required/i,
+    );
+    expect(db.rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it("gives a repair turn task-specific instructions for the exact failed contract", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const valid = missionOutput([
+      "Set up a vertical phone shot and frame the opening visual.",
+      "Open with the prepared hook and show the song moment.",
+      "Record the performance in one take and trim the dead space.",
+      "Publish the finished post and return the link.",
+    ]);
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      requests.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+      return new Response(JSON.stringify({
+        id: `response-${requests.length}`,
+        output_text: valid,
+      }), { status: 200 });
+    });
+    let attempt = 0;
+
+    await runManagerAgentLoop({
+      endpoint: "https://example.test/responses",
+      apiKey: "test-key",
+      model: "test-model",
+      instructions: "Manager",
+      context: { userMessage: exactRequest },
+      tools: [],
+      jsonSchema: { name: "manager", schema: { type: "object" } },
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      executeTool: vi.fn(),
+      validateOutputText: () => {
+        attempt += 1;
+        if (attempt === 1) {
+          throw new Error('Task "Publish the follow-up story": generated_human_task_contract:content_finish_or_distribution_direction_required');
+        }
+      },
+      shouldRepairOutputError: isRecoverableManagerOutputError,
+      outputRepairAttempts: 1,
+    });
+
+    expect(requests).toHaveLength(2);
+    expect(JSON.stringify(requests[1].input)).toMatch(/Publish the follow-up story/i);
+    expect(JSON.stringify(requests[1].input)).toMatch(/repair every named task/i);
+    expect(JSON.stringify(requests[1].input)).toMatch(/edit|caption|publish|distribution/i);
   });
 
   it("does not retry a validator infrastructure failure as if it were malformed model output", async () => {

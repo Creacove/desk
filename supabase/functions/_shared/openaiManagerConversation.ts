@@ -53,9 +53,24 @@ const executableActionIntentProtocol = [
 export function buildManagerConversationInstructions(
   playbookInstructions = "",
   turnMode: ManagerTurnMode = "normal",
+  userRequest = "",
 ) {
   const turnInstructions = turnMode === "decision_grade" ? `\n${decisionGradeInstructions}` : "";
-  return `${buildLegacyManagerConversationInstructions(playbookInstructions)}\n${managerKnowledgeProtocol}\n${buildManagerHumanTaskGenerationContract()}\n${managerInterruptionProtocol}\n${attachmentEvidenceProtocol}\n${executableActionIntentProtocol}${turnInstructions}`;
+  const planningInstructions = managerPlanningScopeInstructions(userRequest);
+  return `${buildLegacyManagerConversationInstructions(playbookInstructions)}\n${managerKnowledgeProtocol}\n${buildManagerHumanTaskGenerationContract()}\n${managerInterruptionProtocol}\n${attachmentEvidenceProtocol}\n${executableActionIntentProtocol}${planningInstructions}${turnInstructions}`;
+}
+
+function managerPlanningScopeInstructions(body: string) {
+  const text = typeof body === "string" ? body.trim().toLowerCase() : "";
+  const planningIntent = /\b(?:create|build|plan|design|map|outline|develop)\b/.test(text)
+    && /\b(?:month|monthly|campaign|rollout|schedule|everything|day[ -]to[ -]day|daily)\b/.test(text);
+  if (!planningIntent) return "";
+  return [
+    "\nDETAILED PLAN SCOPE: Build one mission with 4-8 milestone Tasks, not one Task per calendar day and not an unbounded checklist.",
+    "Group repeated daily actions into one executable Task with a clear cadence, deadline, and result path.",
+    "Cover the requested period through sequenced checkpoints and dates while keeping each Task detailed enough to execute in 3-6 ordered steps.",
+    "Prioritize the complete critical path: preparation, execution, distribution or outreach, measurement, and the next Manager decision.",
+  ].join(" ");
 }
 
 /**

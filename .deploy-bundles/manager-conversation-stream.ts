@@ -1539,15 +1539,27 @@ var executableActionIntentProtocol = [
   "If split readiness is missing, uncertain, disputed, or requires a human correction, do not emit the preparation command. Use the rights workspace action when the artist/team must edit splits or collaborator details.",
   "Never tell the user split confirmations were sent merely because the preparation command was emitted or an approval was created. Sending is complete only after the execution receipt records a real provider outcome."
 ].join("\n");
-function buildManagerConversationInstructions2(playbookInstructions = "", turnMode = "normal") {
+function buildManagerConversationInstructions2(playbookInstructions = "", turnMode = "normal", userRequest = "") {
   const turnInstructions = turnMode === "decision_grade" ? `
 ${decisionGradeInstructions}` : "";
+  const planningInstructions = managerPlanningScopeInstructions(userRequest);
   return `${buildManagerConversationInstructions(playbookInstructions)}
 ${managerKnowledgeProtocol}
 ${buildManagerHumanTaskGenerationContract()}
 ${managerInterruptionProtocol}
 ${attachmentEvidenceProtocol}
-${executableActionIntentProtocol}${turnInstructions}`;
+${executableActionIntentProtocol}${planningInstructions}${turnInstructions}`;
+}
+function managerPlanningScopeInstructions(body) {
+  const text2 = typeof body === "string" ? body.trim().toLowerCase() : "";
+  const planningIntent = /\b(?:create|build|plan|design|map|outline|develop)\b/.test(text2) && /\b(?:month|monthly|campaign|rollout|schedule|everything|day[ -]to[ -]day|daily)\b/.test(text2);
+  if (!planningIntent) return "";
+  return [
+    "\nDETAILED PLAN SCOPE: Build one mission with 4-8 milestone Tasks, not one Task per calendar day and not an unbounded checklist.",
+    "Group repeated daily actions into one executable Task with a clear cadence, deadline, and result path.",
+    "Cover the requested period through sequenced checkpoints and dates while keeping each Task detailed enough to execute in 3-6 ordered steps.",
+    "Prioritize the complete critical path: preparation, execution, distribution or outreach, measurement, and the next Manager decision."
+  ].join(" ");
 }
 function managerConversationOutputTokenBudget(body) {
   const text2 = typeof body === "string" ? body.trim().toLowerCase() : "";
@@ -2047,30 +2059,61 @@ function unique(values) {
   ];
 }
 async function preflightMissionTasks(db, context, decisions) {
-  for (const task of decisions.flatMap((decision) => decision.tasks)) {
-    if (task.workMode === "manager_work") continue;
-    const normalizedTask = normalizeMissionTask(task);
-    const { error } = await db.rpc("assert_generated_human_task_execution_contract_v1", {
-      p_task: {
-        scope: "mission",
-        missionPlanVersionId: context.runId,
-        createdFromRunId: context.runId,
-        title: task.title,
-        ownerRole: task.ownerRole,
-        workMode: normalizedTask.workMode,
-        taskIntent: normalizedTask.intent,
-        readiness: normalizedTask.readiness,
-        purpose: task.purpose,
-        completionExpectation: task.completionExpectation,
-        completionMode: normalizedTask.completionMode,
-        managerResponsibility: task.managerResponsibility,
-        userResponsibility: task.userResponsibility,
-        riskIfLate: task.riskIfLate
-      },
-      p_steps: task.steps
-    });
-    if (error) throw error;
+  const tasks = decisions.flatMap((decision) => decision.tasks).filter((task) => task.workMode !== "manager_work");
+  const checks = await Promise.all(tasks.map(async (task, index) => {
+    try {
+      const normalizedTask = normalizeMissionTask(task);
+      const { error } = await db.rpc("assert_generated_human_task_execution_contract_v1", {
+        p_task: {
+          scope: "mission",
+          missionPlanVersionId: context.runId,
+          createdFromRunId: context.runId,
+          title: task.title,
+          ownerRole: task.ownerRole,
+          workMode: normalizedTask.workMode,
+          taskIntent: normalizedTask.intent,
+          readiness: normalizedTask.readiness,
+          purpose: task.purpose,
+          completionExpectation: task.completionExpectation,
+          completionMode: normalizedTask.completionMode,
+          managerResponsibility: task.managerResponsibility,
+          userResponsibility: task.userResponsibility,
+          riskIfLate: task.riskIfLate
+        },
+        p_steps: task.steps
+      });
+      if (error) throw error;
+      return null;
+    } catch (error) {
+      if (!isGeneratedTaskContractError(error)) return {
+        infrastructureError: error
+      };
+      const title = task.title.trim().replace(/\s+/g, " ").slice(0, 120) || "Untitled task";
+      return {
+        violation: `Task ${index + 1} "${title}": ${taskContractErrorMessage(error)}`
+      };
+    }
+  }));
+  const infrastructureFailure = checks.find((check) => check?.infrastructureError)?.infrastructureError;
+  if (infrastructureFailure) throw infrastructureFailure;
+  const violations = checks.flatMap((check) => check?.violation ? [
+    check.violation
+  ] : []);
+  if (violations.length) {
+    throw new Error(`Manager mission graph task contract failed:
+${violations.join("\n")}`);
   }
+}
+function isGeneratedTaskContractError(error) {
+  if (error instanceof MissionTaskContractError) return true;
+  return /generated_human_task_contract|mission_task_contract/i.test(taskContractErrorMessage(error));
+}
+function taskContractErrorMessage(error) {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
+    return error.message;
+  }
+  return String(error ?? "Unknown task contract error");
 }
 async function activateHumanTask(db, taskId, workMode, intent, assignment) {
   if (workMode === "manager_work") return;
@@ -3206,7 +3249,7 @@ ${sections.join("\n\n")}
 function isRecoverableManagerOutputError(error) {
   const message = readErrorMessage2(error).toLowerCase();
   if (error instanceof SyntaxError) return true;
-  return /manager conversation output|mission graph|generated_human_task_contract|at least .*execution steps?|execution contract|workoperations|incomplete structured|missing responsebody|unexpected end of json|unterminated string in json/.test(message);
+  return /manager conversation output|mission graph|generated_human_task_contract|at least .*execution steps?|execution contract|released\/catalog policy|released music cannot|workoperations|incomplete structured|missing responsebody|unexpected end of json|unterminated string in json/.test(message);
 }
 var textProperties = {
   type: "object",
@@ -4035,15 +4078,43 @@ async function runManagerAgentLoop(input) {
   throw new Error("Manager agent did not finish within the configured loop limit.");
 }
 function buildOutputRepairInstruction(error) {
-  const detail = readErrorMessage2(error).replace(/\s+/g, " ").slice(0, 240);
+  const detail = readErrorMessage2(error).replace(/\s+/g, " ").slice(0, 1600);
+  const targetedGuidance = outputRepairGuidance(detail);
   return [
     "Your previous Manager response was incomplete or failed the structured-output contract.",
     detail ? `Validation signal: ${detail}` : "Validation signal: the response was not complete.",
     "Return one complete valid JSON object for the original request now; do not return commentary, markdown, or a partial object.",
+    "Repair every named task or policy violation in the validation signal in this single response while preserving valid work.",
+    targetedGuidance,
     "Keep the work bounded and put detail into executable fields rather than a long response paragraph.",
     "Every visible human Task must contain at least 3 distinct ordered execution steps; content-execution Tasks need at least four concrete steps and must include the setup/format, hook/message, creator action, and finish/distribution direction.",
     "Do not omit required fields, drop a Task, or create a vague placeholder just to fit the response."
   ].join(" ");
+}
+function outputRepairGuidance(detail) {
+  const guidance = [];
+  if (/content_finish_or_distribution_direction_required/i.test(detail)) {
+    guidance.push("For each named content Task, include an explicit final step covering the edit or caption and the exact publish, export, or distribution direction.");
+  }
+  if (/content_hook_or_message_required/i.test(detail)) {
+    guidance.push("For each named content Task, state the opening hook, first line, question, prompt, or text on screen.");
+  }
+  if (/content_setup_or_format_required/i.test(detail)) {
+    guidance.push("For each named content Task, state the concrete scene, framing, camera setup, or visual format.");
+  }
+  if (/content_creator_action_required/i.test(detail)) {
+    guidance.push("For each named content Task, state what the artist physically records, says, shows, performs, edits, or publishes.");
+  }
+  if (/content_requires_at_least_four_execution_steps/i.test(detail)) {
+    guidance.push("Give each named content Task at least four distinct ordered execution steps.");
+  }
+  if (/released\/catalog policy|released music cannot/i.test(detail)) {
+    guidance.push("Remove generic pre-release asset collection from released music; use post-release measurement, audience conversion, campaign optimization, or a specifically named correction or licensing dependency instead.");
+  }
+  if (/review target|review_approval|approval completion/i.test(detail)) {
+    guidance.push("Do not create a review or approval Task unless the runtime supplied a ready immutable artifact target and version; use human_action or collaborative_draft for other work.");
+  }
+  return guidance.join(" ");
 }
 var MAX_TOOL_OUTPUT_CHARS = 12e3;
 function serializeToolOutput(value) {
@@ -11020,7 +11091,7 @@ data: ${JSON.stringify(event)}
         failureStage = "mission_scope";
         const scopedMissionId = await resolveConversationMissionScope(db, input, conversationId, focusedMusicSubject);
         failureStage = "artist_message";
-        const artistMessage = await insertConversationMessage(db, input, conversationId, {
+        const artistMessage = await resolveArtistMessageForRun(db, input, conversationId, {
           speaker: "artist",
           label: "You",
           authored_by_user_id: user.id,
@@ -11067,7 +11138,7 @@ data: ${JSON.stringify(event)}
         });
         const previousResponseId = "";
         failureStage = "model_generation";
-        const { output, usage, responseId, toolTrace, toolCreatedWork, releaseSuccessToolResults } = await callOpenAIManagerConversation(db, input, buildManagerConversationModelContext(input, packet, conversationId, previousResponseId), previousResponseId, managerConversationPlaybookKeys(packet), conversationId, runId, turn.mode, (event) => {
+        const { output, usage, responseId, toolTrace, toolCreatedWork, releaseSuccessToolResults } = await callOpenAIManagerConversation(db, input, buildManagerConversationModelContext(input, packet, conversationId, previousResponseId), previousResponseId, managerConversationPlaybookKeys(packet), conversationId, runId, turn.mode, focusedMusicSubject, (event) => {
           if (event.status === "started" && isReleaseSuccessTool(event.tool) && input?.musicSubject?.type === "music_item") {
             emit({
               type: "release_success.changed",
@@ -11300,6 +11371,9 @@ function validateInput(input) {
   if (input.conversationId && !UUID_PATTERN4.test(input.conversationId)) {
     if (/^pending-conversation-\d+$/i.test(input.conversationId)) input.conversationId = void 0;
     else throw new Error("Manager conversation ID is invalid.");
+  }
+  if (input.retryMessageId && (!UUID_PATTERN4.test(input.retryMessageId) || !input.conversationId)) {
+    throw new Error("Manager retry message ID is invalid.");
   }
   input.musicSubject = parseMusicConversationSubject(input.musicSubject) ?? void 0;
 }
@@ -11640,6 +11714,15 @@ async function insertConversationMessage(db, input, conversationId, message) {
   if (error) throw error;
   return data;
 }
+async function resolveArtistMessageForRun(db, input, conversationId, message) {
+  if (!input.retryMessageId) return insertConversationMessage(db, input, conversationId, message);
+  const { data, error } = await db.from("conversation_messages").select("id,conversation_id,speaker,label,body,metadata,created_at").eq("id", input.retryMessageId).eq("account_id", input.accountId).eq("artist_workspace_id", input.artistWorkspaceId).eq("artist_id", input.artistId).eq("conversation_id", conversationId).eq("speaker", "artist").maybeSingle();
+  if (error) throw error;
+  if (!data || String(data.body ?? "").trim() !== input.body.trim()) {
+    throw new Error("Manager retry message does not match the original conversation message.");
+  }
+  return data;
+}
 async function selectConversationMessages(db, input, conversationId) {
   const { data, error } = await db.from("conversation_messages").select("id,conversation_id,speaker,label,body,metadata,created_at").eq("conversation_id", conversationId).eq("account_id", input.accountId).eq("artist_workspace_id", input.artistWorkspaceId).eq("artist_id", input.artistId).order("created_at", {
     ascending: true
@@ -11647,7 +11730,7 @@ async function selectConversationMessages(db, input, conversationId) {
   if (error) throw error;
   return data ?? [];
 }
-async function callOpenAIManagerConversation(db, input, context, previousResponseId, playbookKeys, conversationId, runId, turnMode, onToolEvent) {
+async function callOpenAIManagerConversation(db, input, context, previousResponseId, playbookKeys, conversationId, runId, turnMode, focusedMusicSubject, onToolEvent) {
   const turn = {
     mode: turnMode
   };
@@ -11669,7 +11752,7 @@ async function callOpenAIManagerConversation(db, input, context, previousRespons
     endpoint: "https://api.openai.com/v1/responses",
     apiKey: requireEnv("OPENAI_API_KEY"),
     model: Deno.env.get("OPENAI_MANAGER_REASONING_MODEL") || Deno.env.get("OPENAI_MANAGER_CONVERSATION_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5.6-luna",
-    instructions: buildManagerConversationInstructions2(playbookInstructions, turn.mode),
+    instructions: buildManagerConversationInstructions2(playbookInstructions, turn.mode, input.body),
     context,
     previousResponseId,
     tools,
@@ -11686,7 +11769,22 @@ async function callOpenAIManagerConversation(db, input, context, previousRespons
     maxOutputTokens: managerConversationOutputTokenBudget(input.body),
     validateOutputText: async (outputText) => {
       const output = parseManagerConversationOutput2(outputText);
-      await preflightManagerMissionGraphTasks(db, runId ?? "", output);
+      enforceExplicitDecisionPackagePolicy(output, input);
+      const violations = [];
+      try {
+        assertReleasedCatalogManagerPolicy(output, focusedMusicSubject, input.body);
+      } catch (error) {
+        if (!isRecoverableManagerOutputError(error)) throw error;
+        violations.push(error instanceof Error ? error.message : String(error));
+      }
+      try {
+        await preflightManagerMissionGraphTasks(db, runId ?? "", output);
+      } catch (error) {
+        if (!isRecoverableManagerOutputError(error)) throw error;
+        violations.push(error instanceof Error ? error.message : String(error));
+      }
+      if (violations.length) throw new Error(`Manager output admission failed:
+${violations.join("\n")}`);
     },
     outputRepairAttempts: 2,
     shouldRepairOutputError: isRecoverableManagerOutputError,

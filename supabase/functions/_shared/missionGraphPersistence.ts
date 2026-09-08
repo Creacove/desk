@@ -5,7 +5,7 @@ import type {
 } from "./openaiManagerConversation.ts";
 import { loadActiveWorkspaceRoster, type WorkspaceRoster } from "./workspaceRoster.ts";
 import { normalizeTaskAssignment } from "./taskAssignment.ts";
-import { normalizeMissionTask } from "./missionTaskContract.ts";
+import { MissionTaskContractError, normalizeMissionTask } from "./missionTaskContract.ts";
 
 type MissionGraphInput = {
   accountId: string;
@@ -436,30 +436,57 @@ async function preflightMissionTasks(
   context: Pick<ManagerGraphContext, "runId">,
   decisions: ManagerMissionGraphDecision[],
 ) {
-  for (const task of decisions.flatMap((decision) => decision.tasks)) {
-    if (task.workMode === "manager_work") continue;
-    const normalizedTask = normalizeMissionTask(task);
-    const { error } = await db.rpc("assert_generated_human_task_execution_contract_v1", {
-      p_task: {
-        scope: "mission",
-        missionPlanVersionId: context.runId,
-        createdFromRunId: context.runId,
-        title: task.title,
-        ownerRole: task.ownerRole,
-        workMode: normalizedTask.workMode,
-        taskIntent: normalizedTask.intent,
-        readiness: normalizedTask.readiness,
-        purpose: task.purpose,
-        completionExpectation: task.completionExpectation,
-        completionMode: normalizedTask.completionMode,
-        managerResponsibility: task.managerResponsibility,
-        userResponsibility: task.userResponsibility,
-        riskIfLate: task.riskIfLate,
-      },
-      p_steps: task.steps,
-    });
-    if (error) throw error;
+  const tasks = decisions.flatMap((decision) => decision.tasks).filter((task) => task.workMode !== "manager_work");
+  const checks = await Promise.all(tasks.map(async (task, index) => {
+    try {
+      const normalizedTask = normalizeMissionTask(task);
+      const { error } = await db.rpc("assert_generated_human_task_execution_contract_v1", {
+        p_task: {
+          scope: "mission",
+          missionPlanVersionId: context.runId,
+          createdFromRunId: context.runId,
+          title: task.title,
+          ownerRole: task.ownerRole,
+          workMode: normalizedTask.workMode,
+          taskIntent: normalizedTask.intent,
+          readiness: normalizedTask.readiness,
+          purpose: task.purpose,
+          completionExpectation: task.completionExpectation,
+          completionMode: normalizedTask.completionMode,
+          managerResponsibility: task.managerResponsibility,
+          userResponsibility: task.userResponsibility,
+          riskIfLate: task.riskIfLate,
+        },
+        p_steps: task.steps,
+      });
+      if (error) throw error;
+      return null;
+    } catch (error) {
+      if (!isGeneratedTaskContractError(error)) return { infrastructureError: error };
+      const title = task.title.trim().replace(/\s+/g, " ").slice(0, 120) || "Untitled task";
+      return { violation: `Task ${index + 1} "${title}": ${taskContractErrorMessage(error)}` };
+    }
+  }));
+
+  const infrastructureFailure = checks.find((check) => check?.infrastructureError)?.infrastructureError;
+  if (infrastructureFailure) throw infrastructureFailure;
+  const violations = checks.flatMap((check) => check?.violation ? [check.violation] : []);
+  if (violations.length) {
+    throw new Error(`Manager mission graph task contract failed:\n${violations.join("\n")}`);
   }
+}
+
+function isGeneratedTaskContractError(error: unknown) {
+  if (error instanceof MissionTaskContractError) return true;
+  return /generated_human_task_contract|mission_task_contract/i.test(taskContractErrorMessage(error));
+}
+
+function taskContractErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
+    return error.message;
+  }
+  return String(error ?? "Unknown task contract error");
 }
 
 async function activateHumanTask(
