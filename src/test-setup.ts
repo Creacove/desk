@@ -18,3 +18,9 @@ Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
   writable: true,
   value: () => null,
 });
+
+Object.defineProperty(window, "scrollTo", {
+  configurable: true,
+  writable: true,
+  value: () => undefined,
+});
