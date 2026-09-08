@@ -36,6 +36,7 @@ The product must never describe a click-only confirmation as a signature. It mus
 13. The final PDF contains the visible drawn signatures and server-generated signature dates.
 14. An execution certificate is appended to the final PDF and also available separately.
 15. An Excel or CSV export is operational data only. It is never the authoritative signed agreement.
+16. Production launch requires Nigerian music counsel to approve the agreement text, electronic-signature consent, signer-authority rules, evidence manifest, retention policy, and dispute route. Product design can strengthen evidence; it cannot promise that every agreement will be enforceable in every dispute or jurisdiction.
 
 ## 3. What the agreement means
 
@@ -89,78 +90,144 @@ An authenticated workspace member with read access can view status and the final
 
 ## 5. Rights tab information architecture
 
-The existing compact ledger in `src/features/music/MusicScreens.tsx` must become a structured agreement workspace. Keep it inside the current song page and current Rights tab. Do not create a disconnected dashboard.
+The existing compact ledger in `src/features/music/MusicScreens.tsx` becomes the agreement workspace. Keep it inside the current song page, current `Rights` tab, and existing `os-room-rail`. Do not create a disconnected dashboard, wizard, or document-management product inside the tab.
 
-### 5.1 Desktop layout
+The visual direction is **redesign-preserve**. Luna must reuse the current Ordersounds product language rather than introduce a new legal-tech aesthetic.
 
-Use a two-column layout below the tab header:
+### 5.1 Visual contract
 
-- Main column: agreement details and contributor ledger.
-- Right rail: readiness, totals, signing progress, and the primary action.
+The Rights tab must look like the other song tabs at first glance:
 
-The right rail may become sticky after the page header, but it must not obscure the song-level navigation.
+- one continuous page surface on the existing app background;
+- Manrope through the existing `font-display` and `font-ui` utilities;
+- 20-22px tab title, 12-13px operating text, and 10-12px compact labels;
+- existing foreground, muted foreground, background, brand accent, success, warning, and danger tokens only;
+- `border-foreground/8` or the existing adjacent-tab equivalent for structural lines;
+- 10px controls, 12px buttons, and 16px only for the contributor ledger or an existing dialog container;
+- no shadows except an existing app-level dialog or primary-action treatment;
+- no new gradients, glass, illustrations, decorative icons, or legal-themed visual motifs;
+- no metric cards, dashboard tiles, oversized status banners, or persistent PDF side panel;
+- no explanatory subtitle below the tab title;
+- no horizontal or vertical progress stepper;
+- no sticky right rail.
 
-### 5.2 Mobile layout
+Cards are not the default grouping mechanism. Use spacing, one enclosing ledger border, and sparse horizontal rules. Every border, label, badge, and sentence must carry operational meaning.
+
+The contributor ledger is the dominant object. Work metadata, totals, actions, and activity exist to support the ledger and must not compete with it.
+
+### 5.2 Desktop layout
+
+Use one vertical flow within the existing room width:
+
+1. title row and state action;
+2. compact agreement identity row when a version exists;
+3. three-column totals strip;
+4. contributor ledger;
+5. add/edit controls in draft, or signing actions when locked;
+6. collapsed `Work and recording` disclosure;
+7. collapsed `Activity` disclosure.
+
+The PDF preview opens in the app's existing document modal or a full-width document viewer. It never permanently reduces the width of the ledger.
+
+### 5.3 Mobile layout
 
 Stack content in this order:
 
-1. status and primary action;
-2. agreement progress;
-3. readiness blockers;
-4. rights totals;
-5. contributor cards;
-6. work and recording details;
-7. activity history.
+1. title, short state, and overflow menu;
+2. totals strip;
+3. contributor rows;
+4. state action;
+5. work and recording disclosure;
+6. activity disclosure.
 
-The contributor table becomes individual cards. Every percentage and signature state remains visible without horizontal scrolling.
+Each contributor row becomes one compact stacked row inside the same enclosing ledger. Do not turn every contributor into a floating card. Name and signature state appear first; role and rights percentages follow. Every percentage and signature state remains visible without horizontal scrolling.
+
+### 5.4 Copy budget
+
+Default to labels, values, and actions. General teaching copy is not visible in the tab.
+
+Visible prose is allowed only when it does one of four jobs:
+
+1. identifies a blocker the user must fix;
+2. confirms an irreversible or legally meaningful action;
+3. captures consent in the external signing ceremony;
+4. explains an error or exceptional state.
+
+Use one short line for a state message. Do not place helper paragraphs under headings. Field help belongs in a tooltip, accessible description, or inline validation and appears only when needed.
+
+Preferred labels:
+
+- `Draft`
+- `Ready to send`
+- `2 of 3 signed`
+- `Correction requested`
+- `Fully signed`
+- `Preview PDF`
+- `Prepare for signing`
+- `Send requests`
+- `Download signed PDF`
+
+Avoid labels such as `Agreement readiness`, `Signing progress`, or `Current stage` when the value itself communicates the state.
+
+### 5.5 Desktop visual skeleton
+
+```text
+Song rights                                      [Preview PDF]
+Draft
+--------------------------------------------------------------
+Performing 100%        Mechanical 100%        Neighbouring 100%
+--------------------------------------------------------------
+CONTRIBUTOR       ROLE            PERF.   MECH.   NEIGH.   STATUS
+Ada Okafor        Songwriter       50%     50%       -     Draft   ...
+Tobi Mensah       Producer         50%     50%     100%    Draft   ...
+--------------------------------------------------------------
+[+ Add contributor]                         [Prepare for signing]
+
+Work and recording                                             >
+Activity                                                       >
+```
+
+This is a hierarchy reference, not permission to add visible instructional copy or a separate boxed panel around every line.
 
 ## 6. Rights tab header
 
 ### Draft and review states
 
-**Title:** `Split agreement`
-
-**Subtitle:** `Record and sign ownership of the musical work and sound recording.`
+**Title:** `Song rights`
 
 The header shows:
 
-- agreement status;
-- version number when a version exists;
-- last saved time;
-- `Preview agreement` secondary action;
-- state-specific primary action.
+- one short status line directly below the title: `Draft`, `Ready to send`, `[N] of [N] signed`, `Correction requested`, or `Fully signed`;
+- `Version [N]` and document ID only after a locked version exists;
+- one quiet right-aligned action: `Preview PDF` before execution or `Download signed PDF` after execution;
+- secondary actions in the existing overflow menu.
+
+Do not show `Last saved` in the permanent header. Show save state only while saving, after a save failure, or briefly after a manual change.
 
 ### Executed state
 
-**Title:** `Executed split agreement`
+**Title:** `Song rights`
 
-**Subtitle:** `Every required contributor signed this agreement.`
+**Status:** `Fully signed`
 
 Header actions:
 
 - primary: `Download signed PDF`;
-- secondary: `Download execution certificate`;
-- overflow: `Download split data`, `Create revised agreement`, `View activity`.
+- overflow: `Execution certificate`, `Evidence package`, `Split data (.xlsx)`, `Create revised agreement`.
 
-## 7. Agreement progress band
+## 7. Agreement state treatment
 
-Directly below the header, show a four-stage horizontal progress band on desktop and a compact vertical list on mobile:
+Do not render a progress band or stepper in the Rights tab. The workflow is not navigation and does not deserve permanent vertical space.
 
-1. `Prepare`
-2. `Review`
-3. `Sign`
-4. `Complete`
+Represent progress through the short header state and each contributor's row status. The complete internal state mapping remains:
 
-The band is informational, not clickable navigation.
+- `draft`, `correction_requested`: `Draft` or `Correction requested`;
+- `ready_for_signature`, `locking`: `Ready to send`;
+- `sent_for_signature`, `partially_signed`: `[signed] of [required] signed`;
+- `finalizing`: `Finalizing`;
+- `executed`: `Fully signed`.
 
-State mapping:
-
-- `draft`, `correction_requested` -> Prepare
-- `ready_for_signature`, `locking` -> Review
-- `sent_for_signature`, `partially_signed` -> Sign
-- `finalizing`, `executed` -> Complete
-
-Each completed stage uses a check. The current stage uses the brand accent. Future stages remain neutral.
+The external signer may see a very small text marker such as `Review  /  Sign` when orientation is genuinely needed, but no numbered stages and no decorative progress track.
 
 ## 8. Agreement details section
 
@@ -186,7 +253,7 @@ Do not display `TBD`, `Missing`, or placeholder punctuation inside the generated
 
 ## 9. Rights totals section
 
-The right rail begins with **Agreement readiness**.
+Place the totals in the existing compact border-y metric strip directly above the contributor ledger. Do not title the strip.
 
 Show three totals as separate rows:
 
@@ -194,12 +261,12 @@ Show three totals as separate rows:
 - Mechanical rights: `0-100%`
 - Neighbouring rights: `0-100%`
 
-For each column, show one of:
+For each column, show one value and, only when useful, one short state:
 
 - `Not used` when every contributor value is blank;
 - `Balanced` when the applicable total is exactly 100%;
-- `[number]% allocated` when incomplete;
-- `[number]% over` when over-allocated.
+- `[number]%` when incomplete;
+- `[number]% / over` when over-allocated.
 
 An unused column does not block locking. A used column must equal exactly 100%.
 
@@ -209,7 +276,7 @@ Never infer that performing and mechanical percentages are identical. The coordi
 
 **Section title:** `Contributors and splits`
 
-**Section helper:** `Every contributor signs their own identity, contribution, and percentages.`
+There is no persistent section helper. If a coordinator attempts to sign for somebody else, explain the rule at that point.
 
 Desktop columns:
 
@@ -260,15 +327,17 @@ Row actions after execution:
 
 - `View signature receipt`
 
-## 11. Add or edit contributor drawer
+## 11. Add or edit contributor dialog
 
-Use a right-side drawer on desktop and a full-screen sheet on mobile. Do not place the full form inline below the table.
+Use the app's existing centered dialog pattern on desktop and full-screen dialog treatment on small screens. Do not introduce a permanent right-side drawer. The ledger stays visually stable behind the dialog.
+
+The dialog title is `Add contributor` or `Edit contributor`. Do not add a subtitle. Group the fields with spacing and sparse dividers, not nested cards.
 
 ### Identity
 
 | Field | Requirement |
 | --- | --- |
-| Full legal name | Required. Helper: `Use the name shown on identity and banking records.` |
+| Full legal name | Required. Show `Use the name on identity and banking records` only on focus or validation. |
 | Stage / professional name | Optional |
 | Contributor type | Required: Individual or Organisation |
 | Organisation name | Required when contributor type is Organisation |
@@ -326,15 +395,17 @@ The user must confirm `Include without a percentage` before saving such a contri
 
 The selected reason appears in the version snapshot and activity history.
 
-Drawer actions:
+Dialog actions:
 
 - primary: `Save contributor`
 - secondary: `Cancel`
 - destructive edit-only action: `Remove contributor`
 
-## 12. Draft readiness panel
+## 12. Draft readiness treatment
 
-The right rail lists every blocker individually. Examples:
+There is no permanent readiness panel. The primary action stays disabled until the legal minimum is present. Immediately above that action, show at most one unresolved blocker, selected in this order: missing agreement metadata, missing signer identity/contact, under-allocation, over-allocation, missing coordinator.
+
+Examples:
 
 - `Add at least one contributor.`
 - `Enter the recording title or version.`
@@ -344,15 +415,7 @@ The right rail lists every blocker individually. Examples:
 - `Mechanical rights total 110%. Remove 10%.`
 - `Select a coordinating contributor.`
 
-When no blockers remain:
-
-**Heading:** `Ready for signatures`
-
-**Body:** `The agreement is complete. Preparing it will create a locked PDF that cannot be edited during signing.`
-
-Primary action: `Prepare for signatures`
-
-Secondary action: `Preview agreement`
+Do not show a success panel when no blockers remain. Enable `Prepare for signing`. `Preview PDF` remains the quiet header action.
 
 ## 13. Prepare-for-signatures confirmation
 
@@ -360,7 +423,7 @@ Selecting `Prepare for signatures` opens a modal.
 
 **Title:** `Lock this agreement for signing?`
 
-**Body:** `Ordersounds will create Version [N] and generate the PDF every contributor will sign. Names, roles, percentages, and agreement terms cannot change after the signing requests are sent. Corrections will require a new version.`
+**Body:** `This creates Version [N]. Names, roles, percentages, and terms lock until signing ends. A correction creates a new version.`
 
 Summary inside the modal:
 
@@ -373,7 +436,7 @@ Summary inside the modal:
 
 Required checkbox:
 
-`I reviewed the complete agreement and am ready to send this exact version for signatures.`
+`I reviewed this version and am ready to send it for signatures.`
 
 Actions:
 
@@ -390,7 +453,7 @@ After the version is created but before emails are sent, the Rights tab displays
 
 **Status:** `Ready to send`
 
-**Message:** `Version [N] is locked. Review the PDF, then send each contributor their private signing link.`
+**Message:** `Version [N] is locked.`
 
 Actions:
 
@@ -423,7 +486,7 @@ If some emails send and others fail, the UI reports the exact partial result. Su
 
 ## 16. External signing portal
 
-Replace the existing `SplitConfirmationPortal` with a focused four-stage ceremony. It remains outside the authenticated app shell.
+Replace the existing `SplitConfirmationPortal` with a focused signing ceremony outside the authenticated app shell. It should feel like Ordersounds with the navigation removed, not like a third-party e-sign product.
 
 Stages:
 
@@ -431,6 +494,18 @@ Stages:
 2. Review
 3. Sign
 4. Receipt
+
+Do not render these as four large cards or a full stepper. Use one centered reading column, one task per screen, the Ordersounds wordmark, a compact document identity line, and one primary action. Legal consent is the deliberate exception to the app's minimal-copy rule.
+
+Portal visual rules:
+
+- max content width of approximately 720px for review and 560px for verify, consent, and receipt;
+- same Manrope typography, neutral background, token colors, control radii, and button language as the app;
+- no authenticated sidebar, song-room tabs, Manager button, or internal activity;
+- no marketing copy, illustrations, trust badges, celebratory graphics, or oversized completion icon;
+- PDF frame may be wider than the reading column but stays within the viewport;
+- the signature surface is the only intentionally high-contrast white panel in dark mode;
+- one primary action per screen; correction and resend actions remain quiet text or secondary controls.
 
 ### 16.1 Verify
 
@@ -440,7 +515,9 @@ Opening the token-scoped link displays:
 
 **Title:** `Verify your identity`
 
-**Body:** `This signing request is for [legal name] regarding [work title]. We sent a six-digit code to [masked email].`
+**Identity line:** `[Work title] / Version [N]`
+
+**Body:** `Code sent to [masked email].`
 
 OTP rules:
 
@@ -462,11 +539,11 @@ Actions:
 
 Display the full locked agreement using an embedded PDF viewer. On small screens, provide page thumbnails or page navigation and a prominent `Open full PDF` control.
 
-Above the PDF:
+Above the PDF show only:
 
 **Title:** `Review the agreement`
 
-**Body:** `Read the complete document before signing. Your signature will apply to Version [N] of this agreement.`
+**Identity line:** `[Work title] / Version [N]`
 
 Below the PDF, show a concise signer summary:
 
@@ -501,7 +578,7 @@ The exact consent text and a `consent_version` identifier are stored with the si
 
 **Heading:** `Draw your signature`
 
-**Helper:** `Sign inside the box using your finger, stylus, trackpad, or mouse.`
+Do not show a permanent helper paragraph. Inside the empty pad, show `Sign here`. On devices where pointer support is ambiguous, a short accessible hint may appear once: `Use your finger, stylus, trackpad, or mouse.`
 
 Signature pad behavior:
 
@@ -579,7 +656,7 @@ After successful signing:
 
 **Title:** `Your signature was recorded`
 
-**Body:** `You signed Version [N] of the [work title] split agreement on [localized date and time].`
+**Confirmation line:** `Signed [localized date and time]`
 
 Show:
 
@@ -619,20 +696,9 @@ The coordinator selects `Create revised version`, returns to an editable copy, m
 
 ## 18. Signing-state Rights tab
 
-While requests are active, the right rail shows:
+While requests are active, the short header state reads `[signed] of [required] signed`. The contributor rows are the progress display. Do not duplicate every row state in a second dashboard summary.
 
-**Heading:** `Signature progress`
-
-**Primary metric:** `[signed] of [required] signed`
-
-Below it, show counts for:
-
-- sent;
-- opened;
-- verified;
-- signed;
-- correction requested;
-- delivery failed or expired.
+Show a separate count only for an exceptional state that needs action, such as `2 delivery failures` or `1 correction requested`.
 
 Primary action depends on state:
 
@@ -645,8 +711,9 @@ Primary action depends on state:
 Secondary actions:
 
 - `Open signing PDF`
-- `Copy all pending links`
 - `Void signing round`
+
+`Copy pending links` belongs in the overflow menu and must preserve link-access controls. It is not a permanent page action.
 
 Voiding requires a reason and confirmation. It revokes every active link and marks the version `voided`. It does not delete evidence.
 
@@ -686,13 +753,9 @@ If finalization fails, the agreement remains `finalizing_failed`, not executed. 
 
 ## 21. Executed Rights tab
 
-Show a calm success banner:
+Do not show a large success banner. Change the short header state to `Fully signed`, make `Download signed PDF` the right-aligned header action, and preserve the same ledger layout in read-only form.
 
-**Heading:** `Split agreement fully signed`
-
-**Body:** `All [N] required contributors signed Version [N]. The executed PDF is now the authoritative split record.`
-
-The right rail shows:
+The collapsed `Execution details` disclosure shows:
 
 - executed date;
 - document ID;
@@ -705,9 +768,11 @@ The right rail shows:
 Downloads:
 
 1. `Download signed PDF`
-2. `Download execution certificate`
-3. `Download evidence package`
-4. `Download split data (.xlsx)`
+2. `Execution certificate`
+3. `Evidence package`
+4. `Split data (.xlsx)`
+
+Only the signed PDF is shown as a full button. The other downloads live in the overflow menu or inside `Execution details`.
 
 The Excel download displays a warning before generation:
 
@@ -1009,6 +1074,12 @@ The feature is acceptable only when all of the following are true:
 21. Partial send, expiry, correction, duplicate submission, and finalization failure states have tested behavior.
 22. Desktop and mobile layouts remain usable without hidden percentages or signature states.
 23. The final PDF renders cleanly on every page with no clipping, overlapping text, missing signatures, or illegible metadata.
+24. The Rights tab remains one continuous `os-room-rail` surface with no sticky right rail, no progress stepper, no repeated helper paragraphs, and no dashboard metric cards.
+25. The tab title, text sizes, tokens, borders, radii, dialogs, buttons, focus states, and responsive behavior match the current production song-room design system.
+26. The contributor ledger remains the strongest visual object in draft, signing, correction, and executed states.
+27. At most one primary action is visually dominant in the viewport at a time.
+28. A visible sentence in the Rights tab must identify a blocker, confirm a legal action, explain an exception, or report an error; otherwise it is removed or converted to a label.
+29. Nigerian music counsel has approved the production agreement and evidence policy before real signature requests can be sent.
 
 ## 31. Implementation order for Luna
 
