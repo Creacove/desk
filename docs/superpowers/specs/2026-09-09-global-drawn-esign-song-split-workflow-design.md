@@ -1,16 +1,18 @@
-# MCSN-Style Drawn E-Sign Split Workflow Design
+# Global Drawn E-Sign Song Split Workflow Design
 
 **Status:** Product design for review. This document defines the intended product and legal-document workflow. It does not implement the feature.
 
 **Audience:** Luna and any engineer implementing the Ordersounds Rights tab, contributor signing portal, agreement PDF, and execution record.
 
-**Reference document:** `C:\Users\USER\Downloads\MCSN-Split-Sheet-Template.pdf`
+**Example reference document:** `C:\Users\USER\Downloads\MCSN-Split-Sheet-Template.pdf`
 
-**Primary external reference:** [MCSN split-sheet guidance](https://www.mcsnnigeria.org/blog/split-sheet/)
+The MCSN document is an example of recognizable music-industry structure and signature presentation. It does not define the product's jurisdiction, rights model, terminology, or legal effect.
+
+**Global legal references:** UNCITRAL technology-neutral electronic-signature principles, applicable national electronic-transactions laws, and jurisdiction-specific music counsel approvals.
 
 ## 1. Product outcome
 
-Ordersounds must provide a complete digital split-sheet workflow for one song. It must cover both the musical work and the sound recording, collect a hand-drawn electronic signature from every required contributor, and produce one downloadable, fully signed PDF with an execution certificate.
+Ordersounds must provide a globally usable digital split-agreement workflow for one song. It must distinguish the musical composition from the sound recording, collect a hand-drawn electronic signature from every required party, and produce one downloadable, fully signed PDF with an execution certificate.
 
 The editable object inside Ordersounds is the **split workspace**. The legal-facing object is the **Split Agreement**. The final immutable artifact is the **Executed Split Agreement PDF**.
 
@@ -18,25 +20,28 @@ The product must never describe a click-only confirmation as a signature. It mus
 
 ## 2. Binding product decisions
 
-1. The MCSN template is the content and information-hierarchy benchmark.
-2. Ordersounds uses its own branding and original visual implementation. It must not reproduce the MCSN logo or imply MCSN endorsement.
+1. MCSN is one example document. It is not the global product model or default jurisdiction.
+2. Ordersounds uses its own agreement structure, branding, and original visual implementation. It must not reproduce a society's branding or imply endorsement.
 3. The base agreement records split ownership and royalty-participation information. It does not secretly assign copyright or grant an exclusive licence.
-4. The signed columns in version one are:
-   - performing rights percentage;
-   - mechanical rights percentage;
-   - neighbouring rights percentage.
-5. Inapplicable rights columns are blank, not automatically converted to zero.
-6. Every applicable percentage column must total exactly 100% before the agreement can be locked.
-7. Every contributor with an ownership or participation percentage greater than zero is a required signer.
-8. Signatures are drawn by hand on a digital signature pad using a finger, stylus, trackpad, or mouse.
-9. A typed name is not a substitute for the hand-drawn signature.
-10. A contributor must draw a new signature for each agreement. Ordersounds does not save reusable signatures.
-11. Once the signing version is locked, its legal content, participants, and percentages cannot change.
-12. Any correction after locking creates a new version and invalidates every outstanding request for the old version.
-13. The final PDF contains the visible drawn signatures and server-generated signature dates.
-14. An execution certificate is appended to the final PDF and also available separately.
-15. An Excel or CSV export is operational data only. It is never the authoritative signed agreement.
-16. Production launch requires Nigerian music counsel to approve the agreement text, electronic-signature consent, signer-authority rules, evidence manifest, retention policy, and dispute route. Product design can strengthen evidence; it cannot promise that every agreement will be enforceable in every dispute or jurisdiction.
+4. The global core can contain two legally distinct ownership ledgers:
+   - composition ownership share;
+   - master recording ownership share.
+5. Each used core ownership ledger must total exactly 100% before the agreement can be locked. A ledger that is genuinely not part of the parties' agreement remains unused and is not silently set to zero.
+6. Performance, mechanical, neighbouring-rights, producer-point, master royalty participation, publisher-controlled share, and society-specific information are optional schedules. They appear only when enabled by the agreement's purpose or jurisdiction profile and are never presented as universally interchangeable ownership categories.
+7. Every schedule declares its legal/economic basis and validation rule: ownership share, royalty participation, points, controlled share, collection direction, or credit only. Ordersounds must not label one basis as another. Only complete ownership ledgers are universally required to total 100%.
+8. Every contributor with an ownership or participation percentage greater than zero is a required signer unless an approved representative signs for that exact legal capacity.
+9. Signatures are drawn by hand on a digital signature pad using a finger, stylus, trackpad, or mouse.
+10. A typed name is not a substitute for the hand-drawn signature.
+11. A contributor must draw a new signature for each agreement. Ordersounds does not save reusable signatures.
+12. Once the signing version is locked, its legal content, participants, and percentages cannot change.
+13. Any correction after locking creates a new version and invalidates every outstanding request for the old version.
+14. The final PDF contains the visible drawn signatures and server-generated signature dates.
+15. An execution certificate is appended to the final PDF and also available separately.
+16. An Excel or CSV export is operational data only. It is never the authoritative signed agreement.
+17. A jurisdiction profile determines governing law, courts or dispute forum, contract language, required disclosures, age/capacity rules, signature assurance level, witnessing or certification requirements, and retention policy.
+18. No country or rights society is hard-coded as the default. The coordinator must select an approved jurisdiction profile before preparing the agreement for signing.
+19. Launch in a jurisdiction requires local music and electronic-transactions counsel to approve that profile. Product design can strengthen evidence; it cannot promise enforceability in every dispute or jurisdiction.
+20. A hand-drawn signature is always captured because it is part of the Ordersounds signing experience. Where local law or the transaction requires stronger assurance, the same ceremony adds an approved trust-service or qualified-signature step rather than pretending the drawn mark alone meets that higher standard.
 
 ## 3. What the agreement means
 
@@ -49,6 +54,29 @@ Its plain-language legal statement is:
 This statement appears before the signature pages and is included in the consent shown to every signer.
 
 Ordersounds must not state that it independently verified authorship or ownership. It records the parties' agreement and preserves evidence of their execution.
+
+### 3.1 Global agreement architecture
+
+The agreement is assembled from approved, versioned modules:
+
+1. **Global core:** parties, song identity, composition ledger, master ledger, representations, intent, amendment rules, signatures, and execution evidence.
+2. **Jurisdiction profile:** governing law, dispute forum, language, capacity rules, required consumer or electronic-record disclosures, witnessing rules, and signature assurance level.
+3. **Optional rights schedules:** performance, mechanical, neighbouring rights, publisher-controlled share, producer points, master royalty participation, or other locally meaningful allocations. Each schedule states its basis, denominator, validation rule, currency/accounting basis when relevant, and whether it affects ownership or only payment/collection.
+4. **Registry export profile:** mappings for a PRO, CMO, neighbouring-rights society, distributor, publisher, label, or metadata exchange.
+
+The executed PDF states which module versions were used. Changing a legal module creates a new agreement version; it never changes an already executed agreement.
+
+The coordinator selects the governing-law profile from an approved list. `Global`, `International`, and `Internet law` are not valid choices. If Ordersounds does not support the needed governing law, the app may preserve draft data but must not send signature requests.
+
+### 3.2 Signature assurance levels
+
+Ordersounds supports three policy levels behind one consistent signing experience:
+
+- **Standard evidence:** private link, email OTP, full-document review, explicit consent, hand-drawn signature, server timestamp, document hash, signer receipt, and audit events.
+- **Enhanced identity:** Standard evidence plus an approved identity-verification method when the jurisdiction profile or party risk requires it.
+- **Qualified or certified signature:** hand-drawn mark remains visible, but legal execution is completed through an approved trust-service provider when a qualified, advanced, certificate-based, witnessed, or similarly regulated signature is required.
+
+The UI must name the assurance actually used. It must not call a standard drawn electronic signature `qualified`, `advanced`, `digital certificate`, `notarized`, or `witnessed` unless the corresponding process occurred.
 
 ## 4. User roles
 
@@ -175,11 +203,11 @@ Avoid labels such as `Agreement readiness`, `Signing progress`, or `Current stag
 Song rights                                      [Preview PDF]
 Draft
 --------------------------------------------------------------
-Performing 100%        Mechanical 100%        Neighbouring 100%
+Composition 100%                     Master 100%
 --------------------------------------------------------------
-CONTRIBUTOR       ROLE            PERF.   MECH.   NEIGH.   STATUS
-Ada Okafor        Songwriter       50%     50%       -     Draft   ...
-Tobi Mensah       Producer         50%     50%     100%    Draft   ...
+CONTRIBUTOR       ROLE                 COMP.     MASTER     STATUS
+Ada Okafor        Songwriter             50%          -     Draft   ...
+Tobi Mensah       Producer / writer      50%       100%     Draft   ...
 --------------------------------------------------------------
 [+ Add contributor]                         [Prepare for signing]
 
@@ -246,6 +274,10 @@ Fields:
 | Release date | Optional | Required only when the song is already scheduled or released. |
 | ISWC | Optional | Composition identifier. Empty values display as blank in the PDF. |
 | ISRC | Optional | Sound-recording identifier. Empty values display as blank in the PDF. |
+| Agreement language | Required | Selected from languages supported by the chosen jurisdiction profile. Every signer receives the same controlling-language version plus approved translations when available. |
+| Governing law profile | Required before locking | Must be an Ordersounds-approved jurisdiction profile. It controls legal clauses and signature policy. |
+| Dispute forum | Derived and confirmed | Court, arbitration, or other approved forum defined by the governing-law profile. |
+| Territories | Required | `Worldwide` or an explicit territory list. This describes the scope of the recorded agreement and does not replace governing law. |
 | Coordinating contributor | Required | Workspace contributor or manager responsible for checking the sheet. |
 | Coordinator role | Required | Contributor, manager, publisher, label, or other. |
 
@@ -255,11 +287,12 @@ Do not display `TBD`, `Missing`, or placeholder punctuation inside the generated
 
 Place the totals in the existing compact border-y metric strip directly above the contributor ledger. Do not title the strip.
 
-Show three totals as separate rows:
+Show the two global core totals:
 
-- Performing rights: `0-100%`
-- Mechanical rights: `0-100%`
-- Neighbouring rights: `0-100%`
+- Composition: `0-100%`
+- Master: `0-100%`
+
+If an optional allocation schedule is enabled, append its total as a third item. Use that schedule's approved local label, such as `Neighbouring rights`, and never relabel it as ownership when it records participation or collection instructions.
 
 For each column, show one value and, only when useful, one short state:
 
@@ -268,9 +301,9 @@ For each column, show one value and, only when useful, one short state:
 - `[number]%` when incomplete;
 - `[number]% / over` when over-allocated.
 
-An unused column does not block locking. A used column must equal exactly 100%.
+An unused core ledger does not block locking only when the coordinator explicitly marks it `Not covered by this agreement`. Every used ledger or percentage schedule must equal exactly 100% unless its approved module defines a different validation rule.
 
-Never infer that performing and mechanical percentages are identical. The coordinator may deliberately copy one complete column into the other using `Copy performing splits to mechanical`, but that action must show a confirmation and remain visible in activity history.
+Never infer composition ownership from master ownership, master ownership from composition ownership, or society collection shares from either. A deliberate copy action requires confirmation and remains visible in activity history.
 
 ## 10. Contributor ledger
 
@@ -282,11 +315,12 @@ Desktop columns:
 
 1. Contributor
 2. Role
-3. Performing
-4. Mechanical
-5. Neighbouring
-6. Signature
-7. Row actions
+3. Composition
+4. Master
+5. Signature
+6. Row actions
+
+When an optional schedule is enabled, add one compact percentage column if room permits. Additional schedules move into the expanded contributor row rather than forcing horizontal scrolling or shrinking names below useful reading width.
 
 Contributor cell:
 
@@ -343,9 +377,12 @@ The dialog title is `Add contributor` or `Edit contributor`. Do not add a subtit
 | Organisation name | Required when contributor type is Organisation |
 | Signing capacity | Required for organisations. Examples: Director, Authorised Representative, Label Manager. |
 | Email | Required. A duplicate email produces a warning rather than a hard failure because one authorised representative may sign for more than one organisation or capacity. The coordinator must confirm each duplicate explicitly. |
-| Telephone | Required, including country code |
-| MCSN ID | Optional |
-| IPI / CAE number | Optional |
+| Country of residence or formation | Required for selecting capacity and disclosure rules; it does not by itself choose governing law. |
+| Telephone | Optional for Standard evidence; required only when the selected assurance method uses it. Include country code. |
+| IPI / CAE number | Optional for composition parties |
+| Society affiliations | Optional repeatable entries: society name, territory, member number, and represented capacity. MCSN is one possible society. |
+| Publisher or administrator | Optional repeatable legal entity with controlled share and IPI/CAE when applicable. |
+| Recording-party identifier | Optional label, distributor, neighbouring-rights society, ISNI, or locally supported identifier. |
 | Signing authority | Required: Self, Authorised organisation representative, or Parent/guardian |
 | Parent/guardian legal name | Required when signing authority is Parent/guardian |
 | Parent/guardian relationship | Required when signing authority is Parent/guardian |
@@ -373,9 +410,9 @@ At least one role is required. `Other` reveals a required free-text role field.
 
 Inputs:
 
-- Performing rights percentage
-- Mechanical rights percentage
-- Neighbouring rights percentage
+- Composition ownership percentage
+- Master recording ownership percentage
+- fields from any enabled optional rights schedule
 
 Each input accepts blank or a number from 0 to 100 with up to two decimal places. Blank means not applicable. Zero means the right category applies but the contributor receives zero, and should be used only intentionally.
 
@@ -411,8 +448,10 @@ Examples:
 - `Enter the recording title or version.`
 - `Add a legal name for Tobi Mensah.`
 - `Add a signing email for Kemi Adebayo.`
-- `Performing rights total 80%. Add the remaining 20%.`
-- `Mechanical rights total 110%. Remove 10%.`
+- `Composition total 80%. Add the remaining 20%.`
+- `Master total 110%. Remove 10%.`
+- `Select governing law.`
+- `This jurisdiction profile requires enhanced identity verification.`
 - `Select a coordinating contributor.`
 
 Do not show a success panel when no blockers remain. Enable `Prepare for signing`. `Preview PDF` remains the quiet header action.
@@ -432,7 +471,11 @@ Summary inside the modal:
 - number of required signers;
 - applicable totals;
 - agreement date;
-- coordinator name.
+- coordinator name;
+- governing law and dispute forum;
+- controlling language;
+- signature assurance level;
+- enabled optional schedules.
 
 Required checkbox:
 
@@ -476,7 +519,7 @@ Email body must include:
 - coordinator or artist/workspace name;
 - work title and recording version;
 - the signer's role;
-- their performing, mechanical, and neighbouring percentages;
+- their composition share, master share, and values from any enabled optional schedules;
 - the request expiry date;
 - `Review and sign agreement` button;
 - fallback URL;
@@ -506,6 +549,8 @@ Portal visual rules:
 - PDF frame may be wider than the reading column but stays within the viewport;
 - the signature surface is the only intentionally high-contrast white panel in dark mode;
 - one primary action per screen; correction and resend actions remain quiet text or secondary controls.
+- show the controlling agreement language and governing law in the compact document identity area;
+- a signer may choose an approved translation for comprehension, but the portal must clearly identify the controlling-language document they are executing.
 
 ### 16.1 Verify
 
@@ -530,6 +575,8 @@ OTP rules:
 - successful verification is bound to the request, agreement version, and browser session;
 - a verified session expires after 30 minutes of inactivity.
 
+Email OTP is the Standard evidence method, not a universal claim of legal identity. If the jurisdiction profile requires Enhanced identity or a Qualified or certified signature, the Verify stage invokes the approved provider and stores its assurance result and reference without exposing unnecessary identity data in the workspace UI.
+
 Actions:
 
 - primary: `Verify and continue`
@@ -550,9 +597,9 @@ Below the PDF, show a concise signer summary:
 - legal name;
 - stage name;
 - roles;
-- performing percentage;
-- mechanical percentage;
-- neighbouring percentage;
+- composition ownership percentage;
+- master ownership percentage;
+- values from enabled optional schedules;
 - document ID;
 - version;
 - agreement date.
@@ -573,6 +620,8 @@ Before the signature pad, require all three checkboxes:
 3. `I consent to using an electronic signature and intend my signature to bind me to this agreement.`
 
 The exact consent text and a `consent_version` identifier are stored with the signature event.
+
+Consent is rendered from the selected jurisdiction profile and controlling language. The three intent statements above are the global minimum. Approved local disclosures may be added, but cannot be silently removed from an agreement already sent for signing.
 
 ### 16.4 Hand-drawn signature pad
 
@@ -781,26 +830,28 @@ The Excel download displays a warning before generation:
 Post-execution actions:
 
 - `Create revised agreement`
-- `Submit to MCSN` when that integration is available
+- `Export to registry` when an approved society, publisher, distributor, or metadata integration is available
 - `Report a dispute`
 
 Never offer `Edit agreement` on an executed version.
 
 ## 22. PDF specification
 
-Generate an original Ordersounds document using the MCSN template's hierarchy. Do not use browser print-to-PDF. Use a deterministic server-side PDF generator.
+Generate an original Ordersounds document using recognizable music-business document hierarchy. The supplied MCSN PDF is one density and signature-layout reference, not the template or legal source. Do not use browser print-to-PDF. Use a deterministic server-side PDF generator.
 
 ### Page format
 
-- A4 portrait primary output;
-- print-safe margins that also fit when scaled to US Letter;
+- A4 or US Letter portrait according to the jurisdiction/export profile, with both render targets tested;
+- print-safe margins that survive scaling between A4 and US Letter;
 - minimum 10-point body text;
 - black text on white paper;
 - restrained Ordersounds accent colour;
 - page numbers and document identity on every page;
 - no interactive form fields in the final executed PDF;
 - fonts embedded;
-- signatures rendered sharply without pixelation.
+- signatures rendered sharply without pixelation;
+- dates, times, decimal separators, names, addresses, and right-to-left text render correctly for the controlling language;
+- the controlling-language PDF is immutable; approved translations are separate clearly labelled companion PDFs tied to the same document/version hash manifest.
 
 ### Page 1
 
@@ -809,7 +860,8 @@ Generate an original Ordersounds document using the MCSN template's hierarchy. D
 - subtitle: `One agreement covering the musical work and the sound recording.`;
 - work and recording metadata table;
 - explanation of what the agreement records;
-- three applicable totals;
+- composition and master totals plus enabled optional schedules;
+- governing law, dispute forum, territories, controlling language, and signature assurance level;
 - completion statement;
 - coordinator/checker block with drawn signature and date;
 - document ID, version, and pre-signature hash reference in footer.
@@ -823,11 +875,12 @@ Each block contains:
 - full legal name;
 - stage/professional name;
 - roles;
-- MCSN ID;
 - IPI/CAE number;
-- performing percentage;
-- mechanical percentage;
-- neighbouring percentage;
+- society affiliations and membership identifiers when supplied;
+- publisher or administrator and controlled share when supplied;
+- composition ownership percentage;
+- master ownership percentage;
+- values from enabled optional schedules;
 - email;
 - telephone;
 - organisation and signing capacity where applicable;
@@ -841,6 +894,8 @@ Do not place blank signature lines over an electronic signature. The signature i
 ### Agreement statement page or section
 
 Include the legal statement from section 3 and the exact electronic-signature consent. Keep the language concise. Do not add assignment or exclusive-licence terms.
+
+Include the governing-law module, dispute provision, controlling-language statement, territories, enabled optional rights schedules, and every module version used to assemble the agreement.
 
 ### Execution certificate page
 
@@ -863,6 +918,38 @@ Do not print raw IP addresses, raw user-agent strings, email OTPs, or raw signin
 
 The implementation should introduce explicit agreement entities rather than stretching the existing mutable split row.
 
+### `split_jurisdiction_profiles`
+
+- stable profile ID, country/subnational scope, status, and version;
+- governing-law and dispute-forum clause modules;
+- supported controlling languages and approved translation IDs;
+- age, capacity, representative, witness, notarization, and formality rules;
+- allowed signature assurance levels and approved trust providers;
+- required disclosures and consent-module versions;
+- data residency, transfer, retention, and deletion policy references;
+- counsel approval record, effective date, retirement date, and migration notes.
+
+Profiles are immutable once used by a locked version. Updating law or counsel guidance creates a new profile version.
+
+### `split_rights_schedule_definitions`
+
+- stable schedule ID, version, label translations, and legal/economic basis;
+- fields and supported party capacities;
+- denominator and total-validation rule;
+- territory, term, currency, royalty base, deductions, accounting, and audit fields where relevant;
+- applicable jurisdiction and registry-export mappings;
+- counsel approval and effective/retirement dates.
+
+### `split_registry_export_profiles`
+
+- destination organisation and territory;
+- schema/version and identifier requirements;
+- mapping from the global core and optional schedules;
+- validation, consent, submission-authority, and delivery-receipt rules;
+- integration status and effective/retirement dates.
+
+Registry exports are derivative records. They never alter the executed agreement and are never assumed accepted until the destination returns a verifiable receipt.
+
 ### `split_agreements`
 
 - `id`
@@ -880,6 +967,11 @@ The implementation should introduce explicit agreement entities rather than stre
 - `version_number`
 - `status`
 - canonical agreement snapshot JSON
+- governing-law profile ID and version
+- controlling language and approved translation references
+- dispute forum and territory scope
+- signature assurance policy
+- enabled rights-schedule module IDs and versions
 - `terms_version`
 - `consent_version`
 - `document_id`
@@ -906,9 +998,13 @@ Version-scoped snapshot rows containing:
 - roles array;
 - email;
 - telephone;
-- MCSN ID;
+- country of residence or formation;
 - IPI/CAE number;
-- performing, mechanical, and neighbouring percentages as nullable decimals;
+- society-affiliation and membership-identifier entries;
+- publisher/administrator entries and controlled shares;
+- recording-party identifiers;
+- composition and master ownership percentages as nullable decimals;
+- optional schedule values keyed by versioned module and field IDs;
 - signature-required flag;
 - non-signing reason;
 - display order.
@@ -962,6 +1058,7 @@ Luna should preserve existing repository boundaries but replace confirmation-onl
 - resend/revoke request;
 - load token-scoped signing package;
 - issue and verify OTP;
+- perform enhanced identity or trust-service verification when required;
 - submit correction request;
 - submit hand-drawn signature;
 - submit coordinator countersignature;
@@ -970,6 +1067,7 @@ Luna should preserve existing repository boundaries but replace confirmation-onl
 - download final PDF/certificate/evidence/export;
 - void signing round;
 - create revised agreement from a prior version.
+- load approved jurisdiction, language, rights-schedule, and registry-export profiles.
 
 All mutating operations require idempotency keys. Workspace operations require authenticated membership and appropriate role. Public operations are scoped to one hashed token, one participant, and one agreement version.
 
@@ -998,14 +1096,15 @@ Expiry belongs to individual signature requests. Expiring every outstanding requ
 
 ## 26. Legacy data migration
 
-Existing `publishing_share` and `master_share` values must not be silently relabelled as the MCSN columns.
+Existing `publishing_share` and `master_share` values must not be silently treated as globally reliable legal terms.
 
 For an existing split:
 
 - import contributor identity, role, email, and current values into a new draft;
 - mark the draft `rights_mapping_required`;
-- show the coordinator the old publishing and master values beside the new columns;
-- require the coordinator to explicitly assign the old values to performing, mechanical, and/or neighbouring rights;
+- show the coordinator the old publishing and master values beside the new composition and master ownership ledgers;
+- require the coordinator to confirm whether old `publishing_share` means composition ownership or a narrower controlled/collection share;
+- require explicit mapping into any optional rights schedules;
 - record the mapping decision in activity history;
 - never send a signing request from an automatically mapped legacy draft.
 
@@ -1020,7 +1119,9 @@ The old text export remains available only for historical records created before
 - IP and user-agent values are hashed using a server-held rotating secret.
 - Signature images are not exposed as reusable profile assets.
 - Contributors are told that contact information and signatures will appear in the private agreement shared with the parties and rights administrators.
-- Retention and deletion rules must be approved before production launch.
+- Data residency, international-transfer, retention, access, and deletion rules come from the supported jurisdiction profiles and Ordersounds privacy policy.
+- Collect only identity data required by the selected signature assurance level. Do not globally require phone numbers, identity documents, or biometric data when the profile does not require them.
+- Retention and deletion rules must be approved for every supported jurisdiction before launch there.
 - Deleting a user account must not destroy executed agreement evidence required for legal, accounting, or compliance purposes; access and retention must follow the approved policy.
 
 ## 28. Failure behavior
@@ -1045,16 +1146,16 @@ The old text export remains available only for historical records created before
 - Status and errors are not communicated by colour alone.
 - PDF review supports zoom and keyboard navigation.
 - Consent checkboxes have full descriptive labels.
-- For a signer unable to draw a conventional signature, the product may accept a personally drawn mark through the same pad. A witnessed or assisted-signing route is a later legal-review feature, not a typed-signature shortcut.
+- For a signer unable to draw a conventional signature, the product may accept a personally drawn mark through the same pad when the selected jurisdiction profile permits it. Required witnessed, assisted, certified, or qualified signing uses an approved profile and provider, not a typed-signature shortcut.
 
 ## 30. Acceptance criteria
 
 The feature is acceptable only when all of the following are true:
 
-1. The Rights tab displays work metadata, all contributors, all three MCSN-style percentage columns, and signature state.
-2. A used percentage column cannot proceed unless it totals exactly 100%.
-3. An unused percentage column remains blank and does not block signing.
-4. Every positive-share contributor is a required signer.
+1. The Rights tab displays work metadata, all contributors, composition and master ledgers, enabled optional schedules, and signature state.
+2. A used core ledger or percentage schedule cannot proceed unless it satisfies its approved module validation, normally exactly 100%.
+3. A core ledger can be omitted only through an explicit `Not covered by this agreement` choice recorded in the snapshot.
+4. Every positive-share contributor is a required signing party, either directly or through an approved representative signing in that exact legal capacity.
 5. The signing version is immutable after locking.
 6. Every signer sees the complete locked PDF before the signature pad.
 7. OTP verification is required before signing.
@@ -1079,13 +1180,15 @@ The feature is acceptable only when all of the following are true:
 26. The contributor ledger remains the strongest visual object in draft, signing, correction, and executed states.
 27. At most one primary action is visually dominant in the viewport at a time.
 28. A visible sentence in the Rights tab must identify a blocker, confirm a legal action, explain an exception, or report an error; otherwise it is removed or converted to a label.
-29. Nigerian music counsel has approved the production agreement and evidence policy before real signature requests can be sent.
+29. The selected governing-law profile, language, rights schedules, signature assurance policy, and evidence/retention rules are approved and versioned.
+30. No unsupported jurisdiction can send real signature requests; local music and electronic-transactions counsel approval is a release gate for each supported profile.
+31. MCSN and every other society are treated as optional registry/export profiles, never as the global agreement model.
 
 ## 31. Implementation order for Luna
 
 This is sequencing guidance, not implementation work in this document.
 
-1. Establish agreement/version/participant/signature contracts and server-enforced state transitions.
+1. Establish the global core, jurisdiction/language/schedule profile contracts, agreement/version/participant/signature contracts, and server-enforced state transitions.
 2. Replace the Rights tab information architecture and contributor editor.
 3. Add deterministic locked-PDF preview generation and hashing.
 4. Add signature request delivery, token scoping, OTP verification, and correction requests.
@@ -1102,8 +1205,19 @@ This is sequencing guidance, not implementation work in this document.
 - Reusable signature profiles
 - Biometric signature verification
 - Publicly accessible signed PDFs
-- MCSN branding or claims of MCSN endorsement
-- Automatic submission to MCSN before a separate integration is approved
+- Any PRO, CMO, neighbouring-rights society, publisher, distributor, or registry branding without an approved integration
+- Automatic registry submission before the destination-specific mapping and integration are approved
 - Blockchain or public-ledger notarization
 - A typed-signature fallback
 - Wet-ink signing or uploaded scans in this version-one scope
+
+## 33. Legal-design grounding
+
+This product architecture follows a technology-neutral, jurisdiction-aware approach rather than claiming that one signature method has identical effect everywhere:
+
+- UNCITRAL's Model Law on Electronic Signatures emphasizes non-discrimination, technological neutrality, functional equivalence, technical reliability, and substantive cross-border equivalence: https://uncitral.un.org/en/texts/ecommerce/modellaw/electronic_signatures
+- The United States E-SIGN Act generally prevents denying a signature or contract effect solely because it is electronic, while preserving other legal requirements and consent limits: https://www.govinfo.gov/app/details/COMPS-940
+- EU eIDAS distinguishes electronic, advanced, and qualified electronic signatures; a qualified signature has handwritten-signature equivalence across the EU: https://eur-lex.europa.eu/eli/reg/2014/910/oj
+- The Law Commission of England and Wales explains that electronic execution depends on authenticating intent and satisfaction of document-specific formalities, which can include witnessing or prescribed form: https://lawcom.gov.uk/project/electronic-execution-of-documents/
+
+These references justify the architecture, not a global enforceability claim. Each production jurisdiction profile still requires current local legal approval.
