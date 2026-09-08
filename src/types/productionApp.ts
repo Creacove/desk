@@ -30,6 +30,7 @@ export type ProductionWorkspace = {
   artistId: string;
   artistName: string;
   workspaceName: string;
+  teamName?: string;
   status: "setup" | "active" | "paused" | "archived";
   spotifyConnected: boolean;
   spotifyArtistId?: string;

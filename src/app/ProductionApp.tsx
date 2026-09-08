@@ -778,6 +778,13 @@ function CleanProductionWorkspace({
   const [teamCapability, setTeamCapability] = useState<WorkspaceTeamCapability | null>(null);
   const [teamRoster, setTeamRoster] = useState<WorkspaceRoster | null>(null);
   const [teamFirstRunVisible, setTeamFirstRunVisible] = useState(false);
+  const teamCapabilityForUi = useMemo(() => {
+    if (!teamCapability) return null;
+    const capabilityTeamName = teamCapability.teamName?.trim();
+    const workspaceTeamName = workspace?.teamName?.trim();
+    if (capabilityTeamName || !workspaceTeamName) return teamCapability;
+    return { ...teamCapability, teamName: workspaceTeamName };
+  }, [teamCapability, workspace?.teamName]);
 
   useEffect(() => {
     if (!teamService || !workspace?.artistWorkspaceId) {
@@ -2384,7 +2391,7 @@ function CleanProductionWorkspace({
           active={activeSection}
           artistName={workspace?.artistName}
           isTeamPlan={teamCapability?.planKey === "team_6" && teamCapability.enabled && teamCapability.entitled}
-          teamName={teamCapability?.teamName}
+          teamName={teamCapabilityForUi?.teamName}
           activeMissionCount={missions.filter((mission) => mission.status !== "complete").length}
           recentManagerConversations={conversations.slice(0, 3).map((conversation) => ({ id: conversation.id, topic: conversation.topic }))}
           onOpenManagerConversation={(conversationId) => {
@@ -2398,7 +2405,7 @@ function CleanProductionWorkspace({
           <MobileChrome
             active={activeSection}
             title={mobileTitle}
-            teamName={teamCapability?.teamName}
+            teamName={teamCapabilityForUi?.teamName}
             artistName={workspace?.artistName}
             isTeamPlan={teamCapability?.planKey === "team_6" && teamCapability.enabled && teamCapability.entitled}
             activeMissionCount={missions.filter((mission) => mission.status !== "complete").length}
@@ -2607,7 +2614,7 @@ function CleanProductionWorkspace({
               } : undefined}
               teamViewerUserId={analyticsUser.id}
               teamArtistName={workspace?.artistName}
-              teamCapability={teamCapability ?? undefined}
+              teamCapability={teamCapabilityForUi ?? undefined}
               teamViewerAccessRole={teamRoster?.members.find((member) => member.userId === analyticsUser.id)?.accessRole}
               onTeamRosterChanged={async () => {
                 if (!teamService || !workspace?.artistWorkspaceId) return;

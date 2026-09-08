@@ -9,7 +9,7 @@ export type WorkspaceIdentityProps = {
   className?: string;
 };
 
-/** The three identities stay explicit: account/team, managed artist, signed-in person. */
+/** Keep the persistent shell identity short; settings can carry the full workspace context. */
 export function WorkspaceIdentity({
   teamName,
   artistName,
@@ -20,13 +20,9 @@ export function WorkspaceIdentity({
 }: WorkspaceIdentityProps) {
   const cleanTeamName = teamName?.trim();
   const cleanArtistName = artistName.trim() || "Artist desk";
-  const loadingTeam = isTeamPlan && !cleanTeamName;
-  const primary = loadingTeam ? "Team workspace" : isTeamPlan ? cleanTeamName : cleanArtistName;
-  const secondary = loadingTeam
-    ? "Loading team identity"
-    : isTeamPlan
-      ? `${cleanArtistName} · ${variant === "page" ? "artist workspace" : "Artist"}`
-      : "Artist desk";
+  const primary = variant === "page"
+    ? (isTeamPlan ? cleanTeamName || "Team workspace" : cleanArtistName)
+    : `${cleanArtistName}'s Desk`;
   const Primary = variant === "page" ? "h2" : "p";
 
   return (
@@ -38,12 +34,18 @@ export function WorkspaceIdentity({
         )}>
           {primary}
         </Primary>
-        <p className={cn(
-          "truncate font-medium text-muted-foreground",
-          variant === "page" ? "mt-1 text-[13px]" : "mt-0.5 text-[11px] uppercase tracking-[0.07em] text-muted-foreground/68",
-        )}>
-          {secondary}
-        </p>
+        {variant === "page" ? (
+          <p className="mt-1 truncate text-[13px] font-medium text-muted-foreground">
+            {isTeamPlan ? cleanArtistName : "Artist desk"}
+          </p>
+        ) : isTeamPlan && cleanTeamName ? (
+          <p
+            data-testid="workspace-team-badge"
+            className="mt-1 inline-flex max-w-full truncate rounded-md border border-brand-accent/20 bg-brand-accent/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-brand-accent"
+          >
+            {cleanTeamName}
+          </p>
+        ) : null}
       </div>
       {countLabel ? <p className="shrink-0 text-[13px] font-semibold text-brand-accent">{countLabel}</p> : null}
     </div>

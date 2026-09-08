@@ -3,7 +3,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConversationWorkspace, ManagerOfficeScreen } from "./features/manager/ManagerScreens";
 import { ManagerComposer } from "./features/manager/ManagerComposer";
-import { MobileChrome } from "./design-system/components";
+import { DeskRail, MobileChrome } from "./design-system/components";
 
 afterEach(() => cleanup());
 
@@ -38,12 +38,34 @@ describe("Manager premium desktop system", () => {
     expect(message).not.toHaveTextContent("**");
   });
 
-  it("labels the mobile app chrome as Desk", () => {
+  it("shows only the current page title in mobile chrome", () => {
     render(<MobileChrome active="labelHQ" title="Home" onNavigate={vi.fn()} />);
 
     const topbar = screen.getByTestId("mobile-app-topbar");
-    expect(topbar).toHaveTextContent("Desk");
+    expect(topbar).toHaveTextContent("Home");
+    expect(topbar).not.toHaveTextContent("Desk");
     expect(topbar).not.toHaveTextContent("Artist workspace");
+  });
+
+  it("keeps mobile chrome to the page title and actions", () => {
+    render(<MobileChrome active="settings" title="Settings" teamName={null} artistName="Godwinton" isTeamPlan onNavigate={vi.fn()} />);
+
+    const topbar = screen.getByTestId("mobile-app-topbar");
+    expect(topbar).toHaveTextContent("Settings");
+    expect(topbar).not.toHaveTextContent("Loading team identity");
+    expect(topbar).not.toHaveTextContent("Account");
+    expect(topbar).not.toHaveTextContent("Godwinton");
+  });
+
+  it("keeps the desktop rail to the artist desk and compact team badge", () => {
+    render(<DeskRail active="labelHQ" artistName="Victorni" teamName="CBA House 3" isTeamPlan onNavigate={vi.fn()} />);
+
+    const rail = screen.getByRole("navigation", { name: "Ordersounds Desk navigation" });
+    expect(rail).toHaveTextContent("Victorni's Desk");
+    expect(rail).toHaveTextContent("CBA House 3");
+    expect(rail).not.toHaveTextContent("Ordersounds");
+    expect(rail).not.toHaveTextContent("Artist");
+    expect(rail).not.toHaveTextContent("Team workspace");
   });
 
   it("does not show a permanent verification disclaimer under normal work", () => {

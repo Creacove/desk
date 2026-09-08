@@ -59,12 +59,12 @@ export function SettingsScreen({
   onTeamRosterChanged?: () => void | Promise<void>;
 }) {
   const [activeTab, setActiveTab] = useState<SettingsTab>("account");
-  const [teamCapability, setTeamCapability] = useState<WorkspaceTeamCapability | null>(initialTeamCapability ?? null);
+  const [teamCapability, setTeamCapability] = useState<WorkspaceTeamCapability | null>(() => withWorkspaceTeamName(initialTeamCapability ?? null, workspace));
   const teamEnabled = teamCapability?.planKey === "team_6" && teamCapability.enabled && teamCapability.entitled;
 
   useEffect(() => {
     if (!teamService || !teamWorkspaceId) {
-      setTeamCapability(initialTeamCapability ?? null);
+      setTeamCapability(withWorkspaceTeamName(initialTeamCapability ?? null, workspace));
       return;
     }
     if (!initialTeamCapability) setTeamCapability(null);
@@ -72,19 +72,19 @@ export function SettingsScreen({
     void teamService.loadCapability(teamWorkspaceId)
       .then((nextCapability) => {
         if (!cancelled) {
-          setTeamCapability(nextCapability);
+          setTeamCapability(withWorkspaceTeamName(nextCapability, workspace));
           if (nextCapability.planKey !== "team_6" || !nextCapability.enabled || !nextCapability.entitled) setActiveTab((current) => current === "team" ? "account" : current);
         }
       })
       .catch(() => {
         // A failed capability read keeps the legacy Settings surface intact.
         if (!cancelled) {
-          setTeamCapability(initialTeamCapability ?? null);
+          setTeamCapability(withWorkspaceTeamName(initialTeamCapability ?? null, workspace));
           if (!initialTeamCapability || initialTeamCapability.planKey !== "team_6" || !initialTeamCapability.enabled || !initialTeamCapability.entitled) setActiveTab((current) => current === "team" ? "account" : current);
         }
       });
     return () => { cancelled = true; };
-  }, [initialTeamCapability, teamService, teamWorkspaceId]);
+  }, [initialTeamCapability, teamService, teamWorkspaceId, workspace?.teamName]);
 
   const tabs: Array<{ id: SettingsTab; label: string }> = [
     { id: "account", label: "Account" },
@@ -153,6 +153,14 @@ export function SettingsScreen({
 }
 
 type SettingsTab = "artist" | "billing" | "preferences" | "account" | "team";
+
+function withWorkspaceTeamName(capability: WorkspaceTeamCapability | null, workspace?: ProductionWorkspace) {
+  if (!capability) return null;
+  const capabilityTeamName = capability.teamName?.trim();
+  const workspaceTeamName = workspace?.teamName?.trim();
+  if (capabilityTeamName || !workspaceTeamName) return capability;
+  return { ...capability, teamName: workspaceTeamName };
+}
 
 function ProfileSettings({
   profile,

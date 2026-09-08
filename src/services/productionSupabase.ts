@@ -210,6 +210,7 @@ export function createSupabaseWorkspaceLoader(client: SupabaseClient): Productio
             "artist_id",
             "name",
             "status",
+            "accounts!artist_workspaces_account_id_fkey(name)",
             "artists!artist_workspaces_artist_id_fkey(display_name, canonical_spotify_artist_id, canonical_spotify_url)",
             "artist_profiles!artist_profiles_artist_workspace_id_fkey(display_name, spotify_identity, genres, home_market, stage, artist_direction, current_goal, budget_context)",
             "source_sync_jobs!source_sync_jobs_artist_workspace_id_fkey(status,created_at)",
@@ -247,6 +248,7 @@ export function createSupabaseWorkspaceLoader(client: SupabaseClient): Productio
         artistId: workspace.artist_id,
         artistName: workspace.artists?.display_name ?? workspace.name,
         workspaceName: workspace.name,
+        ...(workspace.accounts?.name?.trim() ? { teamName: workspace.accounts.name.trim() } : {}),
         status: workspace.status,
         spotifyConnected: Boolean(workspace.artists?.canonical_spotify_artist_id),
         spotifyArtistId: workspace.artists?.canonical_spotify_artist_id ?? undefined,
@@ -3048,6 +3050,7 @@ type WorkspaceRow = {
   artist_id: string;
   name: string;
   status: ProductionWorkspace["status"];
+  accounts?: { name?: string | null } | null;
   artists?: {
     display_name?: string | null;
     canonical_spotify_artist_id?: string | null;

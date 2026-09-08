@@ -84,7 +84,7 @@ describe("TeamFirstRunScreen", () => {
 
     await waitFor(() => expect(service.completeFirstRun).toHaveBeenCalled());
     expect(await screen.findByRole("heading", { name: "North Star Records" })).toBeInTheDocument();
-    expect(screen.getByText("Nova Vale · artist workspace")).toBeInTheDocument();
+    expect(screen.getByText("Nova Vale")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Invite people" })).toBeInTheDocument();
     expect(screen.queryByLabelText("Email address")).not.toBeInTheDocument();
   });

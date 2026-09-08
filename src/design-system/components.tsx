@@ -329,15 +329,11 @@ export function DeskRail({
       <div className="flex flex-col gap-3">
         <div className="flex items-center gap-3 px-2 pb-2 pt-1">
           <BrandMark size="sm" />
-          <div className="min-w-0">
-            <p className="font-display truncate text-[14px] font-semibold tracking-[-0.015em] text-foreground">Ordersounds</p>
-            <WorkspaceIdentity
-              teamName={teamName}
-              artistName={artistName ?? teamName ?? "Artist desk"}
-              isTeamPlan={isTeamPlan ?? Boolean(teamName?.trim())}
-              className="mt-0.5"
-            />
-          </div>
+          <WorkspaceIdentity
+            teamName={teamName}
+            artistName={artistName ?? teamName ?? "Artist desk"}
+            isTeamPlan={isTeamPlan ?? Boolean(teamName?.trim())}
+          />
         </div>
         <div className="h-px shrink-0 bg-foreground/7" />
         <div className="flex shrink-0 flex-col gap-1 py-0.5">
@@ -468,18 +464,10 @@ export function MobileChrome({
       {showTopbar ? (
         <header
           data-testid="mobile-app-topbar"
-          className="sticky top-0 z-40 -mx-3 mb-3 flex min-h-[72px] items-center justify-between border-b border-foreground/8 bg-background/94 px-3 py-2.5 backdrop-blur-xl lg:hidden"
+          className="sticky top-0 z-40 -mx-3 mb-3 flex min-h-[56px] items-center justify-between border-b border-foreground/8 bg-background/94 px-3 py-2 backdrop-blur-xl lg:hidden"
         >
-          <div className="min-w-0">
-            <WorkspaceIdentity
-              teamName={teamName}
-              artistName={artistName ?? teamName ?? "Artist desk"}
-              isTeamPlan={isTeamPlan ?? Boolean(teamName?.trim())}
-            />
-            <p className="font-ui truncate text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/62">
-              {active === "settings" ? "Account" : "Desk"}
-            </p>
-            <p className="font-display mt-1 truncate text-[19px] font-semibold leading-none tracking-[-0.025em] text-foreground">{title}</p>
+          <div className="min-w-0 flex-1">
+            <p className="font-display truncate text-[18px] font-semibold leading-none tracking-[-0.025em] text-foreground">{title}</p>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
             {onOpenNotifications ? (

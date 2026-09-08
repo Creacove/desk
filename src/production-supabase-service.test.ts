@@ -232,6 +232,25 @@ describe("production Supabase services", () => {
     });
   });
 
+  it("hydrates the Team identity from the account alongside the artist workspace", async () => {
+    const client = fakeSupabaseClient({
+      account_memberships: [{ account_id: "account-1", user_id: "user-1", status: "active" }],
+      artist_workspaces: [{
+        id: "workspace-1",
+        account_id: "account-1",
+        artist_id: "artist-1",
+        name: "Nova Vale Desk",
+        status: "active",
+        accounts: { name: "CBA House 3" },
+        artists: { display_name: "Nova Vale" },
+      }],
+    });
+
+    const result = await createSupabaseWorkspaceLoader(client).loadActiveWorkspace({ id: "user-1" });
+
+    expect(result?.teamName).toBe("CBA House 3");
+  });
+
   it("qualifies workspace embeds so additional foreign keys cannot make startup ambiguous", async () => {
     const { client, calls } = createObservedSupabaseClient({
       account_memberships: [{ account_id: "account-1", user_id: "user-1", status: "active" }],
@@ -241,6 +260,7 @@ describe("production Supabase services", () => {
     await createSupabaseWorkspaceLoader(client).loadActiveWorkspace({ id: "user-1" });
 
     const workspaceQuery = calls.find((call) => call.table === "artist_workspaces");
+    expect(workspaceQuery?.select).toContain("accounts!artist_workspaces_account_id_fkey(name)");
     expect(workspaceQuery?.select).toContain("artists!artist_workspaces_artist_id_fkey(");
     expect(workspaceQuery?.select).toContain("artist_profiles!artist_profiles_artist_workspace_id_fkey(");
     expect(workspaceQuery?.select).toContain("source_sync_jobs!source_sync_jobs_artist_workspace_id_fkey(");
