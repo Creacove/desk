@@ -112,17 +112,18 @@ describe("Home premium briefing", () => {
     expect(page).toHaveClass("desk-home-page");
   });
 
-  it("keeps Today to the compact two-up action pattern", () => {
+  it("keeps Today focused on one next action and tucks the rest behind More from Desk", () => {
     renderHome();
 
     const today = screen.getByTestId("desk-today-execution");
     const actionRows = within(today).getAllByRole("button").filter((button) => button.hasAttribute("data-today-kind"));
 
     expect(today).toHaveClass("home-today-band");
+    expect(within(today).getByTestId("desk-today-next")).toBeInTheDocument();
     expect(actionRows[0]).toHaveAttribute("data-today-primary", "true");
     expect(actionRows[0]).toHaveClass("home-today-row-primary");
-    expect(actionRows.slice(1).every((row) => row.classList.contains("home-today-row-supporting"))).toBe(true);
-    expect(actionRows).toHaveLength(2);
+    expect(actionRows).toHaveLength(1);
+    expect(within(today).getByRole("button", { name: /Show \d+ more items? from Desk/ })).toBeInTheDocument();
     expect(within(today).queryByText("Right now")).not.toBeInTheDocument();
     expect(within(today).queryByTestId("desk-today-index")).not.toBeInTheDocument();
   });
@@ -133,7 +134,7 @@ describe("Home premium briefing", () => {
     renderHome({ onNavigate, onDrawer });
 
     const today = screen.getByTestId("desk-today-execution");
-    expect(within(today).getAllByRole("button")).toHaveLength(2);
+    fireEvent.click(within(today).getByRole("button", { name: /Show \d+ more items? from Desk/ }));
 
     fireEvent.click(within(today).getByRole("button", { name: "Open Split approval" }));
     expect(onNavigate).toHaveBeenCalledWith("missionsWorkspace");
@@ -196,15 +197,15 @@ describe("Home premium briefing", () => {
     expect(within(managerRead).queryByRole("button", { name: "Evidence" })).not.toBeInTheDocument();
   });
 
-  it("uses one two-up Today grid instead of a second Right now block", () => {
+  it("uses one focused Today surface instead of a second Right now block", () => {
     renderHome();
 
     const today = screen.getByTestId("desk-today-execution");
-    const grid = today.querySelector(".home-today-list");
-    const items = within(today).getAllByRole("button");
+    const surface = today.querySelector(".home-today-surface");
+    const items = within(today).getAllByRole("button").filter((button) => button.hasAttribute("data-today-kind"));
 
-    expect(grid).toBeInTheDocument();
-    expect(items).toHaveLength(2);
+    expect(surface).toBeInTheDocument();
+    expect(items).toHaveLength(1);
     expect(screen.queryByTestId("desk-right-now")).not.toBeInTheDocument();
   });
 

@@ -5,11 +5,13 @@ import { describe, expect, it } from "vitest";
 const css = readFileSync(join(process.cwd(), "src/features/desk/deskHome.css"), "utf8");
 
 describe("Desk Home visual contract", () => {
-  it("uses the shared theme tokens and the compact two-up Today pattern", () => {
+  it("uses the shared theme tokens and a focused Today surface", () => {
     expect(css).toContain(".home-today-band");
+    expect(css).toContain(".home-today-surface");
+    expect(css).toContain(".home-today-more");
     expect(css).toContain("hsl(var(--surface-panel))");
     expect(css).toContain("hsl(var(--brand-accent) /");
-    expect(css).toMatch(/\.home-today-list\s*\{[^}]*grid-template-columns:\s*repeat\(2,/s);
+    expect(css).not.toMatch(/\.home-today-list\s*\{[^}]*grid-template-columns:\s*repeat\(2,/s);
     expect(css).toMatch(/\.home-today-row\s*\{[^}]*padding:/s);
   });
 

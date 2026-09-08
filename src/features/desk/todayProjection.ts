@@ -167,7 +167,7 @@ export function projectTodayExecution(packet: TodayRuntimePacket): TodayExecutio
       priorityRank: missionRank(mission, 500),
       headline: `Desk needs one thing for ${mission.title}.`,
       title: question.question,
-      whyNow: question.reason || mission.recommendation || "Desk needs this answer before it can safely continue the current route.",
+      whyNow: question.reason || mission.recommendation || "",
       cta: "answer",
       taskId: question.taskId,
       conversationId: question.conversationId,
@@ -195,7 +195,7 @@ export function projectTodayExecution(packet: TodayRuntimePacket): TodayExecutio
       priorityRank: missionRank(mission, 450),
       headline: `One approval is blocking ${mission.title}.`,
       title: permission.title,
-      whyNow: permission.body || permission.risk || mission.recommendation || "Desk has prepared the next move and needs approval before the external effect.",
+      whyNow: permission.body || mission.recommendation || "",
       cta: "review",
       taskId: permission.taskId,
       permissionRequestId: permission.id,
@@ -283,7 +283,7 @@ export function projectTodayExecution(packet: TodayRuntimePacket): TodayExecutio
         priorityRank: missionRank(mission, checkpointOrderWeight(checkpoint)),
         headline: "Desk is watching the active plan.",
         title: checkpoint.title,
-        whyNow: checkpoint.recommendation || checkpoint.nextAction || "No action needed from you right now.",
+        whyNow: checkpoint.recommendation || checkpoint.nextAction || "",
         cta: "view",
         checkpointId: checkpoint.id,
       };
@@ -292,7 +292,7 @@ export function projectTodayExecution(packet: TodayRuntimePacket): TodayExecutio
     .slice(0, 2);
 
   return {
-    headline: primary?.headline ?? (watches.length ? "Desk is watching the active plan." : "No action needed from you right now."),
+    headline: primary?.headline ?? (watches.length ? "Desk is watching the active plan." : ""),
     primary,
     supporting,
     watches,
@@ -332,12 +332,12 @@ function checkpointOrderWeight(checkpoint?: TodayCheckpointState) {
 
 function taskWhyNow(task: TodayTaskState, checkpoint: TodayCheckpointState | undefined, mission: TodayMissionState) {
   if (normalize(task.status) === "blocked") {
-    return task.dependency || checkpoint?.blockedReason || checkpoint?.dependencyImpact || task.riskIfLate || "The current route cannot move until this blocker is resolved.";
+    return task.dependency || checkpoint?.blockedReason || checkpoint?.dependencyImpact || task.riskIfLate || "";
   }
   if (normalize(task.approvalState) === "needs_approval" || normalize(task.status) === "needs_approval") {
-    return task.purpose || checkpoint?.dependencyImpact || "Desk has prepared the next move and needs approval before continuing.";
+    return task.purpose || checkpoint?.dependencyImpact || "";
   }
-  return task.purpose || checkpoint?.dependencyImpact || checkpoint?.recommendation || mission.recommendation || "This is the next ready human action in the current plan.";
+  return task.purpose || checkpoint?.dependencyImpact || checkpoint?.recommendation || mission.recommendation || "";
 }
 
 function isTaskOnCurrentPlan(task: TodayTaskState, mission: TodayMissionState) {

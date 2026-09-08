@@ -253,7 +253,7 @@ function readPermission(row: Record<string, unknown>): TodayPermissionState | nu
 
 function emptyProjection(now: Date): TodayExecutionProjection {
   return {
-    headline: "No action needed from you right now.",
+    headline: "",
     supporting: [],
     watches: [],
     team: [],

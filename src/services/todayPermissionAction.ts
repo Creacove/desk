@@ -27,7 +27,6 @@ export type TodayPermissionEffect = {
   actionLabel: string;
   targetLabel?: string;
   details: string[];
-  caution?: string;
 };
 
 export async function loadTodayManagerPermission(
@@ -161,9 +160,6 @@ export function describeTodayPermissionEffect(detail: TodayPermissionDetail): To
       actionLabel: "Send split confirmation emails",
       targetLabel: text(payload.splitId) ? `Split ${text(payload.splitId).slice(0, 8)}` : undefined,
       details,
-      caution: executable
-        ? "Approving allows Desk to send these exact confirmation emails once. Approval is not the same as successful delivery; Desk records the real provider result separately."
-        : "This request is prepared only. Approving it will not perform an external send.",
     };
   }
 
@@ -175,9 +171,6 @@ export function describeTodayPermissionEffect(detail: TodayPermissionDetail): To
       ? `${humanize(detail.action.targetType)} ${detail.action.targetId.slice(0, 8)}`
       : undefined,
     details,
-    caution: executable
-      ? "Approving authorizes only the exact frozen effect shown here. Desk records execution separately from approval."
-      : "Desk has prepared this move, but no supported external executor is attached. Approval will not be reported as completed work.",
   };
 }
 

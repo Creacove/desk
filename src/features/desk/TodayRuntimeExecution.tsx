@@ -1,4 +1,4 @@
-import { ChevronRight, Eye } from "lucide-react";
+import { ChevronDown, ChevronRight, Eye } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { createBrowserSupabaseClient } from "../../lib/supabaseClient";
 import {
@@ -26,6 +26,12 @@ type TodayRuntimeExecutionProps = {
   teamContext?: { viewer: { userId: string; accessRole: "owner" | "member" }; scope: WorkspaceScope; roster: WorkspaceRoster } | null;
 };
 
+type TodayQueueEntry =
+  | { kind: "attention"; key: string; item: AttentionItem }
+  | { kind: "manager"; key: string; item: TodayManagerItem; context?: string };
+
+const TODAY_QUEUE_LIMIT = 6;
+
 export function TodayRuntimeExecution({
   missions,
   fallbackItems = [],
@@ -35,6 +41,7 @@ export function TodayRuntimeExecution({
   refreshKey = 0,
   teamContext,
 }: TodayRuntimeExecutionProps) {
+  const [showMore, setShowMore] = useState(false);
   const fallback = useMemo(
     () => teamContext === undefined ? fallbackProjection(missions) : emptyProjection(),
     [missions, teamContext],
@@ -81,15 +88,29 @@ export function TodayRuntimeExecution({
     }
   }
 
-  const visibleFallbackItems = fallbackItems.slice(0, 2);
+  const visibleFallbackItems = fallbackItems.slice(0, 3);
   const actionable = (projection.primary ? [projection.primary, ...projection.supporting] : projection.supporting)
-    .slice(0, Math.max(0, 2 - visibleFallbackItems.length));
-  const visibleWatches = projection.watches.slice(0, Math.max(0, 2 - actionable.length - visibleFallbackItems.length));
-  const visibleItemCount = actionable.length + visibleFallbackItems.length + visibleWatches.length;
+    .slice(0, 3);
+  const visibleWatches = projection.watches.slice(0, 3);
   const visibleUnassigned = teamContext?.viewer.accessRole === "owner" ? projection.unassigned.slice(0, 3) : [];
   const visibleTeam = teamContext ? projection.team.slice(0, 3) : [];
+  const todayQueue: TodayQueueEntry[] = [
+    ...visibleFallbackItems.map((item, index) => ({ kind: "attention" as const, key: `attention:${index}:${item.title}`, item })),
+    ...actionable.map((item) => ({ kind: "manager" as const, key: `${item.kind}:${item.id}`, item })),
+    ...visibleWatches.map((item) => ({ kind: "manager" as const, key: `watch:${item.id}`, item, context: "Watching" })),
+    ...visibleUnassigned.map((item) => ({ kind: "manager" as const, key: `unassigned:${item.id}`, item, context: "Needs an owner" })),
+    ...visibleTeam.map((item) => ({
+      kind: "manager" as const,
+      key: `team:${item.id}`,
+      item,
+      context: item.assigneeUserId
+        ? `With ${teamContext?.roster.members.find((member) => member.userId === item.assigneeUserId)?.displayName ?? "your team"}`
+        : "With your team",
+    })),
+  ].slice(0, TODAY_QUEUE_LIMIT);
+  const [primaryEntry, ...moreEntries] = todayQueue;
 
-  if (!visibleItemCount && !visibleUnassigned.length && !visibleTeam.length) return null;
+  if (!primaryEntry) return null;
 
   return (
     <section data-testid="desk-today-execution" className="home-today-band">
@@ -99,108 +120,92 @@ export function TodayRuntimeExecution({
         </div>
       </div>
 
-      {visibleItemCount ? (
-        <div className="home-today-list">
-          {visibleFallbackItems.map((item, fallbackIndex) => (
-            <button
-              key={`${item.title}-${fallbackIndex}`}
-              type="button"
-              aria-label={`Open ${item.title}`}
-              onClick={() => onOpenFallbackItem(item)}
-              data-today-kind="attention"
-              data-today-primary={fallbackIndex === 0 ? "true" : "false"}
-              className={`home-today-row ${fallbackIndex === 0 ? "home-today-row-primary" : "home-today-row-supporting"} group`}
-            >
-              <span className="home-today-copy min-w-0">
-                <span className="home-today-title block font-semibold text-foreground">{item.title}</span>
-                <span className="home-today-description mt-1.5 block font-medium text-muted-foreground">{item.body}</span>
-              </span>
-              <ChevronRight className="home-today-chevron" aria-hidden="true" />
-            </button>
-          ))}
-          {actionable.map((item) => item.kind === "question" ? (
-            <TodayQuestionRow
-              key={`${item.kind}:${item.id}`}
-              item={item}
-              primary={!visibleFallbackItems.length && projection.primary?.id === item.id && projection.primary.kind === item.kind}
-              onManager={onManager}
-              onResolved={refreshProjection}
-            />
-          ) : item.kind === "permission" && item.permissionRequestId ? (
-            <TodayPermissionRow
-              key={`${item.kind}:${item.id}`}
-              item={item}
-              primary={!visibleFallbackItems.length && projection.primary?.id === item.id && projection.primary.kind === item.kind}
-              onOpenMission={onOpenMission}
-              onResolved={refreshProjection}
-            />
-          ) : (
-            <TodayActionRow
-              key={`${item.kind}:${item.id}`}
-              item={item}
-              primary={!visibleFallbackItems.length && projection.primary?.id === item.id && projection.primary.kind === item.kind}
-              onOpenMission={onOpenMission}
-            />
-          ))}
-          {visibleWatches.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => onOpenMission(item.missionId)}
-              data-today-kind="watch"
-              data-today-primary="false"
-              className="home-today-row home-today-row-supporting group"
-            >
-              <span className="home-today-copy min-w-0">
-                <span className="home-today-title flex items-center gap-2 font-semibold text-foreground">
-                  <Eye className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" aria-hidden="true" />
-                  <span><strong>Desk is watching:</strong> {item.title}</span>
-                </span>
-                <span className="home-today-description mt-1.5 block font-medium text-muted-foreground">{item.whyNow}</span>
-              </span>
-              <ChevronRight className="home-today-chevron" aria-hidden="true" />
-            </button>
-          ))}
+      <div className="home-today-surface">
+        <div data-testid="desk-today-next">
+          {renderTodayEntry(primaryEntry, true)}
         </div>
-      ) : null}
 
-      {visibleUnassigned.length ? (
-        <TodayReadOnlyLane label="Needs an owner" items={visibleUnassigned} onOpenMission={onOpenMission} roster={teamContext?.roster} />
-      ) : null}
-      {visibleTeam.length ? (
-        <TodayReadOnlyLane label="With your team" items={visibleTeam} onOpenMission={onOpenMission} roster={teamContext?.roster} />
-      ) : null}
+        {moreEntries.length ? (
+          <>
+            <button
+              type="button"
+              className="home-today-more group w-full"
+              aria-expanded={showMore}
+              aria-label={`${showMore ? "Hide" : "Show"} ${moreEntries.length} more item${moreEntries.length === 1 ? "" : "s"} from Desk`}
+              data-testid="desk-today-more"
+              onClick={() => setShowMore((current) => !current)}
+            >
+              <span>More from Desk</span>
+              <span className="home-today-more-count" aria-hidden="true">{moreEntries.length}</span>
+              <ChevronDown className={`home-today-more-chevron ${showMore ? "rotate-180" : ""}`} aria-hidden="true" />
+            </button>
+
+            {showMore ? (
+              <div data-testid="desk-today-more-items" className="home-today-more-list">
+                {moreEntries.map((entry) => renderTodayEntry(entry, false))}
+              </div>
+            ) : null}
+          </>
+        ) : null}
+      </div>
     </section>
   );
-}
 
-function TodayReadOnlyLane({ label, items, onOpenMission, roster }: {
-  label: string;
-  items: TodayManagerItem[];
-  onOpenMission: (missionId: string) => void;
-  roster?: WorkspaceRoster;
-}) {
-  return (
-    <div className="mt-6" data-testid={`today-${label.toLowerCase().replace(/\s+/g, "-")}`}>
-      <p className="home-section-label mb-2 font-ui text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/72">{label}</p>
-      <div className="home-today-list">
-        {items.map((item) => (
-          <button
-            key={`${label}:${item.id}`}
-            type="button"
-            onClick={() => onOpenMission(item.missionId)}
-            className="home-today-row home-today-row-supporting group"
-          >
-            <span className="home-today-copy min-w-0">
-              <span className="home-today-title block font-semibold text-foreground">{item.title}</span>
-              <span className="home-today-description mt-1.5 block font-medium text-muted-foreground">{item.assigneeUserId ? roster?.members.find((member) => member.userId === item.assigneeUserId)?.displayName ?? "Team member" : item.missionTitle}</span>
-            </span>
-            <ChevronRight className="home-today-chevron" aria-hidden="true" />
-          </button>
-        ))}
-      </div>
-    </div>
-  );
+  function renderTodayEntry(entry: TodayQueueEntry, primary: boolean) {
+    if (entry.kind === "attention") {
+      return (
+        <button
+          key={entry.key}
+          type="button"
+          aria-label={`Open ${entry.item.title}`}
+          onClick={() => onOpenFallbackItem(entry.item)}
+          data-today-kind="attention"
+          data-today-primary={primary ? "true" : "false"}
+          className={`home-today-row ${primary ? "home-today-row-primary" : "home-today-row-supporting"} group`}
+        >
+          <span className="home-today-copy min-w-0">
+            <span className="home-today-title block font-semibold text-foreground">{entry.item.title}</span>
+            <span className="home-today-description mt-1.5 block font-medium text-muted-foreground">{entry.item.body}</span>
+          </span>
+          <ChevronRight className="home-today-chevron" aria-hidden="true" />
+        </button>
+      );
+    }
+
+    const { item } = entry;
+    if (item.kind === "question") {
+      return (
+        <TodayQuestionRow
+          key={entry.key}
+          item={item}
+          primary={primary}
+          onManager={onManager}
+          onResolved={refreshProjection}
+          context={entry.context}
+        />
+      );
+    }
+    if (item.kind === "permission" && item.permissionRequestId) {
+      return (
+        <TodayPermissionRow
+          key={entry.key}
+          item={item}
+          primary={primary}
+          onResolved={refreshProjection}
+          context={entry.context}
+        />
+      );
+    }
+    return (
+      <TodayActionRow
+        key={entry.key}
+        item={item}
+        primary={primary}
+        onOpenMission={onOpenMission}
+        context={entry.context}
+      />
+    );
+  }
 }
 
 function TodayQuestionRow({
@@ -208,11 +213,13 @@ function TodayQuestionRow({
   primary,
   onManager,
   onResolved,
+  context,
 }: {
   item: TodayManagerItem;
   primary: boolean;
   onManager: () => void;
   onResolved: () => Promise<void>;
+  context?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
@@ -282,7 +289,8 @@ function TodayQuestionRow({
     >
       <span className="home-today-copy min-w-0">
         <span className="home-today-title block font-semibold text-foreground">{item.title}</span>
-        <span className="home-today-description mt-1 block max-w-[50rem] font-medium text-muted-foreground">{item.whyNow}</span>
+        {item.whyNow ? <span className="home-today-description mt-1 block max-w-[50rem] font-medium text-muted-foreground">{item.whyNow}</span> : null}
+        {context ? <span className="home-today-meta mt-1.5 block text-[11px] font-semibold uppercase tracking-[0.055em] text-muted-foreground/62">{context}</span> : null}
       </span>
       <ChevronRight className="home-today-chevron" aria-hidden="true" />
     </button>
@@ -292,13 +300,13 @@ function TodayQuestionRow({
 function TodayPermissionRow({
   item,
   primary,
-  onOpenMission,
   onResolved,
+  context,
 }: {
   item: TodayManagerItem;
   primary: boolean;
-  onOpenMission: (missionId: string) => void;
   onResolved: () => Promise<void>;
+  context?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState<TodayPermissionDetail | null>(null);
@@ -362,7 +370,8 @@ function TodayPermissionRow({
       >
         <span className="home-today-copy min-w-0">
           <span className="home-today-title block font-semibold text-foreground">{item.title}</span>
-          <span className="home-today-description mt-1 block max-w-[50rem] font-medium text-muted-foreground">{item.whyNow}</span>
+          {item.whyNow ? <span className="home-today-description mt-1 block max-w-[50rem] font-medium text-muted-foreground">{item.whyNow}</span> : null}
+          {context ? <span className="home-today-meta mt-1.5 block text-[11px] font-semibold uppercase tracking-[0.055em] text-muted-foreground/62">{context}</span> : null}
         </span>
         <ChevronRight className={`home-today-chevron ${loading ? "animate-pulse" : ""} ${open ? "rotate-90" : ""}`} aria-hidden="true" />
       </button>
@@ -376,9 +385,6 @@ function TodayPermissionRow({
                   <p className="text-[13px] font-semibold text-foreground">{effect.actionLabel}</p>
                   {effect.targetLabel ? <p className="mt-1 text-[11px] font-medium text-muted-foreground">{effect.targetLabel}</p> : null}
                 </div>
-                <span className="rounded-full border border-foreground/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">
-                  {effect.executable ? "Desk can execute" : "Prepared only"}
-                </span>
               </div>
 
               {effect.details.length ? (
@@ -387,9 +393,6 @@ function TodayPermissionRow({
                 </ul>
               ) : null}
 
-              {detail.risk ? <p className="mt-3 text-[12px] font-medium leading-relaxed text-muted-foreground"><strong className="text-foreground/75">Risk:</strong> {detail.risk}</p> : null}
-              {effect.caution ? <p className="mt-3 text-[11px] font-medium leading-relaxed text-muted-foreground">{effect.caution}</p> : null}
-
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 <button
                   type="button"
@@ -397,7 +400,7 @@ function TodayPermissionRow({
                   disabled={Boolean(pendingDecision)}
                   className="rounded-[10px] bg-foreground px-3.5 py-2 text-[12px] font-semibold text-background disabled:opacity-50"
                 >
-                  {pendingDecision === "approve" ? "Approving…" : effect.executable ? "Approve & run" : "Approve"}
+                  {pendingDecision === "approve" ? "Approving…" : effect.executable ? "Approve & run" : "Approve draft"}
                 </button>
                 <button
                   type="button"
@@ -406,14 +409,6 @@ function TodayPermissionRow({
                   className="rounded-[10px] border border-foreground/12 px-3.5 py-2 text-[12px] font-semibold text-foreground disabled:opacity-50"
                 >
                   {pendingDecision === "reject" ? "Rejecting…" : "Reject"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onOpenMission(item.missionId)}
-                  disabled={Boolean(pendingDecision)}
-                  className="px-2 py-2 text-[12px] font-semibold text-muted-foreground disabled:opacity-50"
-                >
-                  Open Mission
                 </button>
               </div>
             </>
@@ -429,12 +424,14 @@ function TodayActionRow({
   item,
   primary,
   onOpenMission,
+  context,
 }: {
   item: TodayManagerItem;
   primary: boolean;
   onOpenMission: (missionId: string) => void;
+  context?: string;
 }) {
-  const meta = compactMeta(item);
+  const meta = [context, compactMeta(item)].filter(Boolean).join(" · ");
   return (
     <button
       type="button"
@@ -445,7 +442,10 @@ function TodayActionRow({
       data-today-primary={primary ? "true" : "false"}
     >
       <span className="home-today-copy min-w-0">
-        <span className="home-today-title block font-semibold text-foreground">{item.title}</span>
+        <span className="home-today-title flex items-center gap-2 font-semibold text-foreground">
+          {item.kind === "watch" ? <Eye className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" aria-hidden="true" /> : null}
+          <span>{item.title}</span>
+        </span>
         {item.whyNow ? (
           <span className="home-today-description mt-1 block max-w-[50rem] font-medium text-muted-foreground">
             {item.whyNow}
@@ -515,7 +515,7 @@ function fallbackProjection(missions: MissionViewModel[]): TodayExecutionProject
         ? `One approval is blocking ${mission.title}.`
         : `${mission.title} is the priority today.`,
       title: task.title,
-      whyNow: task.purpose || mission.recommendation || "This is the next ready human action in the current plan.",
+      whyNow: task.purpose || mission.recommendation || "",
       cta: task.approvalState === "needs approval" ? "review" as const : "start" as const,
       taskId: task.id,
       checkpointId: task.checkpointId,
@@ -537,14 +537,14 @@ function fallbackProjection(missions: MissionViewModel[]): TodayExecutionProject
       priorityRank: 0,
       headline: "Desk is watching the active plan.",
       title: checkpoint.title,
-      whyNow: checkpoint.recommendation || "No action needed from you right now.",
+      whyNow: checkpoint.recommendation || "",
       cta: "view" as const,
       checkpointId: checkpoint.id,
     }];
   }).slice(0, 2);
 
   return {
-    headline: actionable[0]?.headline ?? (watches.length ? "Desk is watching the active plan." : "No action needed from you right now."),
+    headline: actionable[0]?.headline ?? (watches.length ? "Desk is watching the active plan." : ""),
     primary: actionable[0],
     supporting: actionable.slice(1),
     watches,
@@ -556,7 +556,7 @@ function fallbackProjection(missions: MissionViewModel[]): TodayExecutionProject
 
 function emptyProjection(): TodayExecutionProjection {
   return {
-    headline: "No action needed from you right now.",
+    headline: "",
     supporting: [],
     watches: [],
     team: [],

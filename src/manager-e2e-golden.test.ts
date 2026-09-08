@@ -97,7 +97,7 @@ describe('Gate 7 full Manager golden path', () => {
     expect(adaptiveRuntime).toContain('operatingFacts');
     expect(continuation).toContain('manager_next_executable_task_v1');
     expect(continuation).toContain('manager_continuation_ready');
-    expect(todayRuntime).toContain('Desk is watching:');
+    expect(todayRuntime).toContain('context: "Watching"');
   });
 
   it('lets one necessary resource question update canonical reality and resume the same review', () => {

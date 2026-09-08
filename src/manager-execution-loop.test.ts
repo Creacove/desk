@@ -69,7 +69,7 @@ describe("Manager execution loop", () => {
     expect(composerIndex).toBeGreaterThan(todayIndex);
     expect(deskHome).toContain('placeholder="Tell Desk what changed, or ask something"');
     expect(deskHome).not.toContain('placeholder="What do you want to work on?"');
-    expect(todayExecution).toContain("Desk is watching:");
+    expect(todayExecution).toContain('context: "Watching"');
   });
 });
 

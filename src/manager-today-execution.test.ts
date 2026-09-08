@@ -160,6 +160,31 @@ describe("Today runtime projection", () => {
     expect(projection.primary?.cta).toBe("review");
   });
 
+  it("does not use a generic permission risk as the Today reason", () => {
+    const projection = projectTodayExecution(packet({
+      missions: [mission("m1", "Odaeshi", 1)],
+      permissions: [{
+        id: "permission-1",
+        missionId: "m1",
+        requestType: "external_send",
+        title: "Review outreach",
+        risk: "Low-fit outreach could create noise and waste money.",
+        status: "pending",
+      }],
+    }));
+
+    expect(projection.primary?.whyNow).toBe("");
+  });
+
+  it("leaves the Today reason empty when the current state has no specific explanation", () => {
+    const projection = projectTodayExecution(packet({
+      missions: [mission("m1", "Odaeshi", 1)],
+      tasks: [task("task-1", "m1", { purpose: "" })],
+    }));
+
+    expect(projection.primary?.whyNow).toBe("");
+  });
+
   it("keeps a targetless review task out of Today until its draft is ready", () => {
     const projection = projectTodayExecution(packet({
       missions: [mission("m1", "Odaeshi", 1)],
@@ -229,6 +254,16 @@ describe("Today runtime projection", () => {
     expect(ui).toContain("GuidedContextQuestion");
     expect(ui).toContain("answerTodayManagerQuestion");
     expect(ui).toContain("await onResolved()");
+  });
+
+  it("keeps generic system risk language out of the Today review surface", () => {
+    const ui = read("src/features/desk/TodayRuntimeExecution.tsx");
+    const projection = read("src/features/desk/todayProjection.ts");
+    expect(ui).not.toContain("Risk:");
+    expect(ui).not.toContain("Prepared only");
+    expect(ui).not.toContain("Approval will not be reported as completed work");
+    expect(ui).not.toContain("This is the next ready human action in the current plan.");
+    expect(projection).not.toContain("No action needed from you right now.");
   });
 
   it("wires Home to the runtime projection instead of the old per-Mission Today list", () => {
