@@ -2611,10 +2611,12 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         }
 
         const { data, error } = await client.functions.invoke("manager-conversation", {
+          headers: input.requestId ? { "x-request-id": input.requestId } : undefined,
           body: {
             accountId: workspace.accountId,
             artistWorkspaceId: workspace.artistWorkspaceId,
             artistId: workspace.artistId,
+            ...(input.requestId ? { requestId: input.requestId } : {}),
             conversationId: input.conversationId,
             ...(input.retryMessageId ? { retryMessageId: input.retryMessageId } : {}),
             body,
@@ -2645,11 +2647,13 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           headers: {
             Authorization: `Bearer ${accessToken}`,
             "Content-Type": "application/json",
+            ...(input.requestId ? { "x-request-id": input.requestId } : {}),
           },
           body: JSON.stringify({
             accountId: workspace.accountId,
             artistWorkspaceId: workspace.artistWorkspaceId,
             artistId: workspace.artistId,
+            ...(input.requestId ? { requestId: input.requestId } : {}),
             conversationId: input.conversationId,
             ...(input.retryMessageId ? { retryMessageId: input.retryMessageId } : {}),
             body,
@@ -3801,6 +3805,7 @@ function conversationMessageFromRow(row: ConversationMessageRow): ConversationVi
   const contextAnswers = normalizeContextAnswers(metadata.contextAnswers);
   const attachments = normalizeConversationAttachments(metadata.attachments);
   const contextRequestId = readOptionalConversationString(metadata.contextRequestId);
+  const requestId = readOptionalConversationString(metadata.requestId);
   const presentation = normalizeManagerTurnPresentation(metadata.presentation);
   return ({
     id: row.id,
@@ -3812,6 +3817,7 @@ function conversationMessageFromRow(row: ConversationMessageRow): ConversationVi
     ...(contextAnswers.length ? { contextAnswers } : {}),
     ...(attachments.length ? { attachments } : {}),
     ...(contextRequestId ? { contextRequestId } : {}),
+    ...(requestId ? { requestId } : {}),
     ...(presentation ? { presentation } : {}),
   } as ManagerConversationMessageWire);
 }
@@ -3827,6 +3833,7 @@ function conversationViewModel(input: unknown): ConversationViewModel {
         const contextAnswers = normalizeContextAnswers(message.contextAnswers);
         const attachments = normalizeConversationAttachments(message.attachments);
         const contextRequestId = readOptionalConversationString(message.contextRequestId);
+        const requestId = readOptionalConversationString(message.requestId);
         const presentation = normalizeManagerTurnPresentation(message.presentation);
         return ({
           id: readConversationString(message.id, `message-${index}`),
@@ -3838,6 +3845,7 @@ function conversationViewModel(input: unknown): ConversationViewModel {
           ...(contextAnswers.length ? { contextAnswers } : {}),
           ...(attachments.length ? { attachments } : {}),
           ...(contextRequestId ? { contextRequestId } : {}),
+          ...(requestId ? { requestId } : {}),
           ...(presentation ? { presentation } : {}),
         } as ManagerConversationMessageWire);
       })

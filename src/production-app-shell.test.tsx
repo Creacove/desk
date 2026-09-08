@@ -1610,6 +1610,7 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(within(activityCenter).getByRole("button", { name: "Close Activity Center" }));
     fireEvent.click(within(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).getByRole("button", { name: "Settings" }));
     expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Artist" }));
     expect(screen.getByAltText("Nova Vale artist image")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
     fireEvent.click(screen.getByRole("tab", { name: "Account" }));
@@ -1638,6 +1639,7 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findAllByRole("heading", { name: "Home" }).then(([heading]) => heading)).toBeInTheDocument();
     fireEvent.click(within(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Artist" }));
     fireEvent.change(screen.getByLabelText("Artist goals"), { target: { value: "Build a durable audience operating system." } });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
@@ -2399,10 +2401,10 @@ describe("Clean production prototype-match shell", () => {
 
     expect(screen.getByText("What changed after the campaign result?")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Send to Manager" })).toBeDisabled();
-    expect(repositories.manager.sendMessage).toHaveBeenCalledWith({
+    expect(repositories.manager.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
       conversationId: "conv-1",
       body: "What changed after the campaign result?",
-    });
+    }));
 
     await act(async () => {
       resolveSend({
@@ -2452,7 +2454,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByRole("button", { name: "Send to Manager" })).toBeDisabled();
     expect(screen.queryByText("Manager is reading the workspace packet.")).not.toBeInTheDocument();
     expect(repositories.manager.sendMessageStream).toHaveBeenCalledWith(
-      { body: "We have $5,000. What should we do this month?" },
+      expect.objectContaining({ body: "We have $5,000. What should we do this month?" }),
       expect.any(Object),
     );
 
@@ -2600,12 +2602,12 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 
     expect(repositories.manager.sendMessageStream).toHaveBeenLastCalledWith(
-      {
+      expect.objectContaining({
         conversationId: "conv-context",
         body: "Context answers for Manager.",
         contextRequestId: "ctx-1",
         contextAnswers: [{ questionKey: "budget_boundary", answer: "$5,000" }],
-      },
+      }),
       expect.any(Object),
     );
   }, 20000);
@@ -3190,11 +3192,11 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry Manager message" }));
     expect(screen.getAllByTestId("manager-message-artist")).toHaveLength(1);
     expect(repositories.manager.sendMessageStream).toHaveBeenLastCalledWith(
-      {
+      expect.objectContaining({
         conversationId: "conv-retry",
         body: "Should we move the release?",
         retryMessageId: "11111111-1111-4111-8111-111111111111",
-      },
+      }),
       expect.any(Object),
     );
     expect(analyticsMock.trackEvent.mock.calls.some(([name]) => name === "chat message sent")).toBe(false);
@@ -3252,9 +3254,9 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.change(askBox, { target: { value: "We have $5,000. What should we do this month?" } });
     fireEvent.click(screen.getByRole("button", { name: "Send to Manager" }));
 
-    expect(repositories.manager.sendMessage).toHaveBeenCalledWith({
+    expect(repositories.manager.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
       body: "We have $5,000. What should we do this month?",
-    });
+    }));
     expect(await screen.findByRole("heading", { name: /Budget validation/i })).toBeInTheDocument();
     expect(screen.getByText("Hold scale spend and run a capped proof loop tied to verified city response, rights clearance, and conversion proof.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "View task" })).toBeInTheDocument();
@@ -4306,6 +4308,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByRole("heading", { name: "Manager's Office" })).toBeInTheDocument();
 
     fireEvent.click(within(rail).getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Artist" }));
     expect(screen.getByTestId("settings-mobile-profile-summary")).toHaveClass("sm:hidden");
     expect(screen.getByTestId("settings-desktop-profile-summary")).toHaveClass("hidden", "sm:flex");
   }, 20000);
@@ -4377,9 +4380,9 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Create first mission" }));
 
-    await waitFor(() => expect(repositories.manager.sendMessage).toHaveBeenCalledWith({
+    await waitFor(() => expect(repositories.manager.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
       body: "Create the first mission for this workspace.",
-    }));
+    })));
     expect(runMissionGenesis).not.toHaveBeenCalled();
     expect(await screen.findByText("Create the first mission for this workspace.")).toBeInTheDocument();
   }, 20000);

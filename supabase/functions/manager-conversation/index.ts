@@ -48,10 +48,17 @@ import { loadFocusedSongDocuments, persistFocusedSongDocumentDraft } from "../_s
 import { attachedKnowledge, attachmentMetadata, resolveManagerConversationAttachments, type ManagerConversationAttachment } from "../_shared/manager-conversation/attachments.ts";
 import { assertReleasedCatalogManagerPolicy } from "../_shared/managerReleasedCatalogPolicy.ts";
 import { loadActiveWorkspaceRoster } from "../_shared/workspaceRoster.ts";
+import {
+  ensureManagerConversationRun,
+  findManagerConversationRun,
+  managerConversationRequestPayload,
+  managerConversationRunIsActive,
+  normalizeManagerConversationRequestId,
+} from "../_shared/managerConversationReliability.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-request-id",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -59,6 +66,7 @@ type ManagerConversationInput = {
   accountId: string;
   artistWorkspaceId: string;
   artistId: string;
+  requestId?: string;
   conversationId?: string;
   retryMessageId?: string;
   taskId?: string;
@@ -81,6 +89,7 @@ Deno.serve(withAppErrorCapture("manager-conversation", async (request) => {
 
   try {
     input = (await request.json()) as ManagerConversationInput;
+    normalizeManagerConversationRequestId(input, request.headers.get("x-request-id"));
     validateInput(input);
 
     const authHeader = request.headers.get("Authorization");
@@ -102,7 +111,14 @@ Deno.serve(withAppErrorCapture("manager-conversation", async (request) => {
     const db = createClient(supabaseUrl, serviceRoleKey);
     await assertActiveWorkspaceEntitlement(db, input);
     await assertWorkspace(db, input);
-    const conversationId = await ensureConversation(db, input);
+    const existingRun = await findManagerConversationRun(db, input);
+    if (existingRun?.status === "completed") {
+      return json(await loadReplayConversation(db, input, existingRun.conversation_id));
+    }
+    if (existingRun && managerConversationRunIsActive(existingRun)) {
+      return json({ error: "Manager is still processing this request. Try again in a moment.", status: "in_progress", requestId: input.requestId, runId: existingRun.id }, 409);
+    }
+    const conversationId = existingRun?.conversation_id ?? await ensureConversation(db, input);
     const focusedMusicSubject = await ensureMusicConversationSubjectLink(db, input, conversationId);
     const attachments = await resolveManagerConversationAttachments(db, input, focusedMusicSubject ?? undefined);
     const scopedMissionId = await resolveConversationMissionScope(db, input, conversationId, focusedMusicSubject);
@@ -115,7 +131,12 @@ Deno.serve(withAppErrorCapture("manager-conversation", async (request) => {
     });
 
     const packet = await buildManagerConversationPacket(db, input, conversationId, artistMessage.id, focusedMusicSubject, attachments);
-    runId = await createManagerRun(db, input, conversationId, packet);
+    const run = await ensureManagerConversationRun(db, input, conversationId, packet, existingRun, managerConversationRequestPayload(input));
+    runId = run.runId;
+    if (run.state === "completed") return json(await loadReplayConversation(db, input, conversationId));
+    if (run.state === "in_progress") {
+      return json({ error: "Manager is still processing this request. Try again in a moment.", status: "in_progress", requestId: input.requestId, runId }, 409);
+    }
     usageId = await createUsageEvent(db, input, runId);
 
     // Each turn is intentionally grounded from the bounded source-of-truth opening
@@ -177,6 +198,7 @@ Deno.serve(withAppErrorCapture("manager-conversation", async (request) => {
       body: output.responseBody,
       manager_synthesis_run_id: runId,
       metadata: {
+        requestId: input.requestId,
         classification: output.classification,
         actionPolicy: output.actionPolicy,
         confidence: output.confidence,
@@ -214,7 +236,7 @@ Deno.serve(withAppErrorCapture("manager-conversation", async (request) => {
       operation: "generate_reply",
       source: "edge",
       publicMessage: failure.publicMessage,
-      requestId: request.headers.get("x-request-id") ?? undefined,
+      requestId: input?.requestId ?? request.headers.get("x-request-id") ?? undefined,
       userId,
       accountEmail,
       accountId: input?.accountId,
@@ -230,7 +252,7 @@ Deno.serve(withAppErrorCapture("manager-conversation", async (request) => {
     });
     if (runId) await markRunFailedSafe(runId, failure.internalMessage, errorEventId);
     if (usageId) await markUsageFailedSafe(usageId, failure.internalMessage, errorEventId);
-    return markErrorCaptured(json({ error: failure.publicMessage, errorEventId }, 500), errorEventId);
+    return markErrorCaptured(json({ error: failure.publicMessage, errorEventId, requestId: input?.requestId ?? undefined, runId: runId ?? undefined }, 500), errorEventId);
   }
 }));
 
@@ -694,7 +716,34 @@ async function selectConversationHistory(db: any, input: ManagerConversationInpu
   return (data ?? []).reverse();
 }
 
+async function loadReplayConversation(db: any, input: ManagerConversationInput, conversationId?: string | null) {
+  if (!conversationId) throw new Error("Manager replay is missing its conversation.");
+  const { data: conversation, error: conversationError } = await db
+    .from("conversations")
+    .select("id,topic,status,summary,last_update_at")
+    .eq("id", conversationId)
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .maybeSingle();
+  if (conversationError) throw conversationError;
+  if (!conversation) throw new Error("Manager replay conversation was not found.");
+  const messages = await selectConversationMessages(db, input, conversationId);
+  return toConversationViewModel(conversation, messages, input.taskId);
+}
+
 async function insertConversationMessage(db: any, input: ManagerConversationInput, conversationId: string, message: Record<string, unknown>) {
+  const managerRunId = typeof message.manager_synthesis_run_id === "string" ? message.manager_synthesis_run_id : "";
+  if (managerRunId) {
+    const { data: existing, error: existingError } = await db
+      .from("conversation_messages")
+      .select("id,conversation_id,speaker,label,body,authored_by_user_id,metadata,created_at")
+      .eq("manager_synthesis_run_id", managerRunId)
+      .eq("speaker", "manager")
+      .maybeSingle();
+    if (existingError) throw existingError;
+    if (existing) return existing;
+  }
   const { data, error } = await db
     .from("conversation_messages")
     .insert({
@@ -702,6 +751,7 @@ async function insertConversationMessage(db: any, input: ManagerConversationInpu
       artist_workspace_id: input.artistWorkspaceId,
       artist_id: input.artistId,
       conversation_id: conversationId,
+      request_id: input.requestId ?? null,
       ...message,
     })
     .select("id,conversation_id,speaker,label,body,authored_by_user_id,metadata,created_at")
@@ -716,6 +766,20 @@ async function resolveArtistMessageForRun(
   conversationId: string,
   message: Record<string, unknown>,
 ) {
+  if (!input.retryMessageId && input.requestId) {
+    const { data: existing, error: existingError } = await db
+      .from("conversation_messages")
+      .select("id,conversation_id,speaker,label,body,authored_by_user_id,metadata,created_at")
+      .eq("account_id", input.accountId)
+      .eq("artist_workspace_id", input.artistWorkspaceId)
+      .eq("artist_id", input.artistId)
+      .eq("conversation_id", conversationId)
+      .eq("speaker", "artist")
+      .eq("request_id", input.requestId)
+      .maybeSingle();
+    if (existingError) throw existingError;
+    if (existing) return existing;
+  }
   if (!input.retryMessageId) return insertConversationMessage(db, input, conversationId, message);
   const { data, error } = await db
     .from("conversation_messages")
@@ -819,37 +883,23 @@ async function hasAttachedUnreleasedSong(db: any, input: ManagerConversationInpu
   return Boolean(data?.id && !data.released_at && !["released", "catalogued", "archived"].includes(String(data.lifecycle_stage ?? "").toLowerCase()));
 }
 
-async function createManagerRun(db: any, input: ManagerConversationInput, conversationId: string, packet: unknown) {
-  const { data, error } = await db
-    .from("manager_synthesis_runs")
-    .insert({
-      account_id: input.accountId,
-      artist_workspace_id: input.artistWorkspaceId,
-      artist_id: input.artistId,
-      trigger_type: "conversation",
-      conversation_id: conversationId,
-      status: "running",
-      classification: "manager_conversation_router_v1",
-      confidence: "unknown",
-      context_payload: buildManagerConversationModelContext(input, packet, conversationId),
-      steps_payload: [{ step: "packet_built", status: "completed" }, { step: "manager_synthesis", status: "running" }],
-      action_plan: [],
-      limitations: [],
-      started_at: new Date().toISOString(),
-    })
-    .select("id")
-    .single();
-  if (error) throw error;
-  return data.id as string;
-}
-
 async function persistActions(db: any, input: ManagerConversationInput, runId: string, output: ManagerConversationOutput) {
   for (const [index, action] of output.proposedActions.entries()) {
+    const actionKey = `${input.requestId ?? runId}:proposed-action:${index}`;
+    const { data: existing, error: existingError } = await db.from("manager_run_actions")
+      .select("id")
+      .eq("manager_synthesis_run_id", runId)
+      .eq("action_key", actionKey)
+      .maybeSingle();
+    if (existingError) throw existingError;
+    if (existing) continue;
+
     const { error } = await db.from("manager_run_actions").insert({
       account_id: input.accountId,
       artist_workspace_id: input.artistWorkspaceId,
       artist_id: input.artistId,
       manager_synthesis_run_id: runId,
+      action_key: actionKey,
       order_index: index,
       action_type: action.actionType,
       target_type: action.targetType,
@@ -857,7 +907,7 @@ async function persistActions(db: any, input: ManagerConversationInput, runId: s
       approval_required: action.approvalRequired,
       payload: action,
     });
-    if (error) throw error;
+    if (error && !isUniqueViolation(error)) throw error;
   }
 }
 
@@ -893,7 +943,7 @@ async function persistMemory(db: any, input: ManagerConversationInput, conversat
       supersedes_memory_entry_id: item.supersedes_memory_entry_id,
       created_from_run_id: runId,
     });
-    if (error) throw error;
+    if (error && !isUniqueViolation(error)) throw error;
   }
 }
 
@@ -982,6 +1032,18 @@ async function persistTaskDraftOutput(
 
 async function persistDecisionPackageOutput(db: any, input: ManagerConversationInput, conversationId: string, runId: string, output: ManagerConversationOutput) {
   if (output.actionPolicy !== "create_decision_package") return null;
+
+  const { data: existing, error: existingError } = await db
+    .from("manager_outputs")
+    .select("id")
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .eq("created_from_run_id", runId)
+    .eq("output_type", "decision_package")
+    .maybeSingle();
+  if (existingError) throw existingError;
+  if (existing) return existing as { id: string };
 
   const { error: staleError } = await db
     .from("manager_outputs")
@@ -1079,6 +1141,12 @@ async function completeManagerRun(db: any, runId: string, output: ManagerConvers
       steps_payload: [{ step: "packet_built", status: "completed" }, { step: "manager_synthesis", status: "completed" }],
       action_plan: output.proposedActions,
       limitations: output.limitations,
+      result_payload: {
+        status: output.status,
+        summary: output.summary,
+        responseBody: output.responseBody,
+        createdWork: output.createdWork,
+      },
       completed_at: new Date().toISOString(),
     })
     .eq("id", runId);
@@ -1086,6 +1154,15 @@ async function completeManagerRun(db: any, runId: string, output: ManagerConvers
 }
 
 async function createUsageEvent(db: any, input: ManagerConversationInput, runId: string) {
+  const { data: existing, error: existingError } = await db
+    .from("ai_run_usage_events")
+    .select("id")
+    .eq("manager_synthesis_run_id", runId)
+    .eq("operation_key", "manager_conversation_router")
+    .maybeSingle();
+  if (existingError) throw existingError;
+  if (existing) return existing.id as string;
+
   const { data, error } = await db
     .from("ai_run_usage_events")
     .insert({
@@ -1102,7 +1179,17 @@ async function createUsageEvent(db: any, input: ManagerConversationInput, runId:
     })
     .select("id")
     .single();
-  if (error) throw error;
+  if (error && !isUniqueViolation(error)) throw error;
+  if (error) {
+    const { data: raced, error: raceError } = await db
+      .from("ai_run_usage_events")
+      .select("id")
+      .eq("manager_synthesis_run_id", runId)
+      .eq("operation_key", "manager_conversation_router")
+      .maybeSingle();
+    if (raceError || !raced) throw raceError ?? error;
+    return raced.id as string;
+  }
   return data.id as string;
 }
 
@@ -1170,6 +1257,7 @@ function toConversationViewModel(conversation: any, messages: any[], taskContext
       contextAnswers: normalizeContextAnswers(metadata.contextAnswers),
       attachments: normalizeConversationAttachments(metadata.attachments),
       contextRequestId: typeof metadata.contextRequestId === "string" && metadata.contextRequestId.trim() ? metadata.contextRequestId.trim() : undefined,
+      requestId: typeof metadata.requestId === "string" && metadata.requestId.trim() ? metadata.requestId.trim() : undefined,
     };
   });
   return {
@@ -1245,6 +1333,7 @@ function readPlaybookKeyList(value: unknown): PlaybookKey[] {
 
 function managerArtistMessageMetadata(input: ManagerConversationInput, attachments: ManagerConversationAttachment[] = []) {
   return {
+    requestId: input.requestId ?? "",
     taskId: input.taskId ?? "",
     contextRequestId: input.contextRequestId ?? "",
     contextAnswers: normalizeContextAnswers(input.contextAnswers),
@@ -1357,6 +1446,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function numberOrNull(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function isUniqueViolation(error: unknown) {
+  if (!error) return false;
+  if (typeof error === "object" && "code" in error && (error as { code?: unknown }).code === "23505") return true;
+  return /duplicate key|unique constraint/i.test(String(error));
 }
 
 function describeError(error: unknown, fallback: string) {

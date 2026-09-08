@@ -65,7 +65,7 @@ describe("YourTeamPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Invite teammate" }));
 
     expect(screen.getByRole("button", { name: "Add role details" })).toBeInTheDocument();
-    expect(screen.queryByLabelText("Your role")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Their role")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Responsibility 1")).not.toBeInTheDocument();
   });
 
@@ -91,11 +91,10 @@ describe("YourTeamPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Invite teammate" }));
     fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "newperson@example.com" } });
     fireEvent.click(screen.getByRole("button", { name: "Add role details" }));
-    fireEvent.change(screen.getByRole("combobox", { name: "Your role" }), { target: { value: "DSP / distribution" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Their role" }), { target: { value: "DSP / distribution" } });
     fireEvent.click(screen.getByRole("button", { name: "Send invitation" }));
 
-    expect(await screen.findByText("Invitation sent")).toBeInTheDocument();
-    expect(screen.getByDisplayValue(/\/join#token=A+/)).toBeInTheDocument();
+    expect(await screen.findByText("Invitation sent.")).toBeInTheDocument();
     expect(service.invite).toHaveBeenCalledWith({ artistWorkspaceId: scope.artistWorkspaceId, email: "newperson@example.com", operatingTitle: "DSP / distribution", responsibilityTags: ["DSP pitching", "Distribution", "Metadata"] });
   });
 
@@ -113,6 +112,7 @@ describe("YourTeamPanel", () => {
 
   it("resends and revokes a pending invitation", async () => {
     const { service } = renderPanel();
+    fireEvent.click(screen.getByText("Invitations", { exact: true }));
     fireEvent.click(screen.getByRole("button", { name: "Resend invitation to daniel@example.com" }));
     expect(await screen.findByDisplayValue(/\/join#token=B+/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Revoke invitation for daniel@example.com" }));

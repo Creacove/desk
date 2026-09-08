@@ -48,11 +48,20 @@ describe("AcceptTeamInvitation", () => {
       <AcceptTeamInvitation
         service={{ acceptInvitation } as never}
         user={null}
-        onAuthenticationRequired={() => undefined}
+        preview={{
+          teamName: "Northstar Team",
+          artistName: "Northstar",
+          invitedEmail: "person@example.com",
+          operatingTitle: "Distribution lead",
+          responsibilityTags: ["distribution"],
+          expiresAt: "2026-09-12T09:00:00.000Z",
+        }}
       />,
     );
 
-    expect(await screen.findByText("Sign in to accept this invitation.")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Invitation ready" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sign in" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/stays here while you authenticate/i)).not.toBeInTheDocument();
     expect(screen.queryByText(token)).not.toBeInTheDocument();
     expect(acceptInvitation).not.toHaveBeenCalled();
     expect(sessionStorage.getItem("ordersounds.team.invite.token")).toBe(token);

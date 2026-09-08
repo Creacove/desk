@@ -603,7 +603,7 @@ describe("OpenAI Manager Conversation Router", () => {
   it("does not stream the authoritative answer before its work graph is durable", () => {
     const runtime = streamFunctionSource.slice(
       streamFunctionSource.indexOf("enforceExplicitDecisionPackagePolicy(output, input)"),
-      streamFunctionSource.indexOf('type: "conversation.completed"'),
+      streamFunctionSource.lastIndexOf('type: "conversation.completed"'),
     );
     const persistAt = runtime.indexOf("persistManagerMissionGraphDecisions");
     const managerMessageAt = runtime.indexOf("insertConversationMessage(db, input, conversationId");

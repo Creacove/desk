@@ -45,6 +45,7 @@ import {
 } from "../lib/analytics";
 import { createBrowserSupabaseClient } from "../lib/supabaseClient";
 import { reportBrowserServiceError } from "../lib/errorTelemetry";
+import { createClientRequestId } from "../lib/requestId";
 import { createFixtureProductionRuntime, createFixtureRepositories } from "../services/fixtureRepositories";
 import {
   createSupabaseAuthAdapter,
@@ -1499,6 +1500,7 @@ function CleanProductionWorkspace({
     conversationId?: string,
     stableTopic?: string,
     options: {
+      requestId?: string;
       contextRequestId?: string;
       contextAnswers?: ManagerConversationContextAnswer[];
       attachmentIds?: string[];
@@ -1509,6 +1511,7 @@ function CleanProductionWorkspace({
   ) {
     const trimmedBody = body.trim();
     if (!trimmedBody) return;
+    const requestId = options.requestId ?? createClientRequestId();
 
     const sourceConversation = conversationId
       ? conversations.find((conversation) => conversation.id === conversationId) ??
@@ -1536,8 +1539,8 @@ function CleanProductionWorkspace({
     const optimisticConversation = conversationId
       ? options.retryMessageId
         ? withOptimisticManagerRetry(sourceConversation)
-        : withOptimisticManagerMessage(sourceConversation, trimmedBody)
-      : createOptimisticManagerConversation(trimmedBody, musicSubjectView);
+        : withOptimisticManagerMessage(sourceConversation, trimmedBody, requestId)
+      : createOptimisticManagerConversation(trimmedBody, musicSubjectView, requestId);
     const optimisticId = optimisticConversation?.id;
     const lockedTopic = stableTopic ?? sourceConversation?.topic;
     let streamCompleted = false;
@@ -1553,6 +1556,7 @@ function CleanProductionWorkspace({
 
       const managerInput = {
         body: trimmedBody,
+        requestId,
         ...(conversationId ? { conversationId } : {}),
         ...(options.retryMessageId ? { retryMessageId: options.retryMessageId } : {}),
         ...(options.contextRequestId ? { contextRequestId: options.contextRequestId } : {}),
@@ -2378,6 +2382,8 @@ function CleanProductionWorkspace({
       <div className="relative z-20 mx-auto grid min-h-screen w-full max-w-[1760px] gap-0 px-3 pb-28 pt-0 sm:px-5 lg:grid-cols-[216px_minmax(0,1fr)] lg:px-0 lg:py-0 lg:pb-0">
         <DeskRail
           active={activeSection}
+          artistName={workspace?.artistName}
+          isTeamPlan={teamCapability?.planKey === "team_6" && teamCapability.enabled && teamCapability.entitled}
           teamName={teamCapability?.teamName}
           activeMissionCount={missions.filter((mission) => mission.status !== "complete").length}
           recentManagerConversations={conversations.slice(0, 3).map((conversation) => ({ id: conversation.id, topic: conversation.topic }))}
@@ -2392,6 +2398,9 @@ function CleanProductionWorkspace({
           <MobileChrome
             active={activeSection}
             title={mobileTitle}
+            teamName={teamCapability?.teamName}
+            artistName={workspace?.artistName}
+            isTeamPlan={teamCapability?.planKey === "team_6" && teamCapability.enabled && teamCapability.entitled}
             activeMissionCount={missions.filter((mission) => mission.status !== "complete").length}
             notificationCount={notificationCount}
             onOpenNotifications={openActivityCenter}
@@ -2522,6 +2531,7 @@ function CleanProductionWorkspace({
                   const lastArtistMessage = activeConversation.messages.filter((message) => message.speaker === "artist").at(-1);
                   if (lastArtistMessage) {
                     void sendManagerMessage(lastArtistMessage.body, activeConversation.id, activeConversation.topic, {
+                      requestId: lastArtistMessage.requestId,
                       retryMessageId: lastArtistMessage.id,
                       ...(lastArtistMessage.attachments?.length ? { attachmentIds: lastArtistMessage.attachments.map((attachment) => attachment.id) } : {}),
                       taskId: managerTaskContextId ?? undefined,
@@ -2567,6 +2577,7 @@ function CleanProductionWorkspace({
           {view === "artistProfileWorkspace" ? (
             <SettingsScreen
               profile={profile}
+              accountUser={analyticsUser}
               accountEmail={analyticsUser.email}
               onChange={setProfile}
               onSaveProfile={
@@ -3467,7 +3478,7 @@ function applyManagerConversationLink(
   );
 }
 
-function createOptimisticManagerConversation(body: string, musicSubject?: ConversationViewModel["musicSubject"]): ConversationViewModel {
+function createOptimisticManagerConversation(body: string, musicSubject: ConversationViewModel["musicSubject"] | undefined, requestId: string): ConversationViewModel {
   const id = `pending-conversation-${Date.now()}`;
   const runId = `pending-run-${Date.now()}`;
   return {
@@ -3490,6 +3501,7 @@ function createOptimisticManagerConversation(body: string, musicSubject?: Conver
         speaker: "artist",
         label: "You",
         body,
+        requestId,
         status: "sent",
       },
     ],
@@ -3498,7 +3510,7 @@ function createOptimisticManagerConversation(body: string, musicSubject?: Conver
   };
 }
 
-function withOptimisticManagerMessage(conversation: ConversationViewModel | undefined, body: string): ConversationViewModel | null {
+function withOptimisticManagerMessage(conversation: ConversationViewModel | undefined, body: string, requestId: string): ConversationViewModel | null {
   if (!conversation) return null;
   const optimisticId = `pending-user-${Date.now()}`;
   const runId = `pending-run-${Date.now()}`;
@@ -3519,6 +3531,7 @@ function withOptimisticManagerMessage(conversation: ConversationViewModel | unde
         speaker: "artist",
         label: "You",
         body,
+        requestId,
         status: "sent",
       },
     ],

@@ -1,12 +1,13 @@
 import { Check, Copy, Pencil, RefreshCw, RotateCw, UserMinus, UserPlus, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "../../design-system/components";
 import { Button, SkeletonBlock } from "../../design-system/desktopPrimitives";
+import { WorkspaceIdentity } from "../../design-system/workspaceIdentity";
 import type { WorkspaceTeamService } from "../../services/workspaceTeamService";
 import { createTeamInviteLink } from "../../services/teamInviteRoute";
 import { MemberResponsibilitiesForm } from "./MemberResponsibilitiesForm";
-import { TeamRolePicker } from "./TeamRolePicker";
+import { TeamInviteDialog } from "./TeamInviteDialog";
 import type {
   TeamInvitation,
   TeamInvitationDeliveryStatus,
@@ -34,7 +35,6 @@ export type YourTeamPanelProps = {
 };
 
 type PanelError = { scope: "load" | "invite" | "member"; message: string };
-type InviteDraft = TeamResponsibilities & { email: string };
 
 const emptyResponsibilities: TeamResponsibilities = { operatingTitle: null, responsibilityTags: [] };
 
@@ -55,8 +55,6 @@ export function YourTeamPanel({
   const [error, setError] = useState<PanelError | null>(null);
   const [retryKey, setRetryKey] = useState(0);
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [inviteDraft, setInviteDraft] = useState<InviteDraft>({ email: "", ...emptyResponsibilities });
-  const [invitePending, setInvitePending] = useState(false);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [inviteLinkStatus, setInviteLinkStatus] = useState<string | null>(null);
   const [inviteDeliveryStatus, setInviteDeliveryStatus] = useState<TeamInvitationDeliveryStatus | null>(null);
@@ -130,13 +128,7 @@ export function YourTeamPanel({
   function openInviteForm() {
     clearMessages();
     setInviteLink(null);
-    setInviteDraft({ email: "", ...emptyResponsibilities });
     setInviteOpen(true);
-  }
-
-  function closeInviteForm() {
-    if (invitePending) return;
-    setInviteOpen(false);
   }
 
   if (!teamAccessActive) {
@@ -166,38 +158,6 @@ export function YourTeamPanel({
   }
 
   if (!roster) return null;
-
-  async function submitInvite(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    clearMessages();
-    const email = inviteDraft.email.trim().toLowerCase();
-    const responsibilities = validateResponsibilities(inviteDraft);
-    if (!/^\S+@\S+\.\S+$/.test(email)) {
-      setError({ scope: "invite", message: "Enter the email for the person you want to invite." });
-      return;
-    }
-    if (!responsibilities.valid) {
-      setError({ scope: "invite", message: responsibilities.message });
-      return;
-    }
-    try {
-      setInvitePending(true);
-      const response = await service.invite({ artistWorkspaceId: scope.artistWorkspaceId, email, ...responsibilities.value });
-      const link = createTeamInviteLink(window.location.origin, response.token);
-      setInviteLink(link);
-      setInviteDeliveryStatus(response.emailStatus ?? "skipped");
-      setInviteLinkStatus(deliveryStatusMessage(response.emailStatus));
-      setMutationNotice(response.emailStatus === "sent" ? "Invitation sent." : response.emailStatus === "failed" ? "Invite created. The email did not send." : "Invite link ready.");
-      setInvitations((current) => [response.invitation, ...current.filter((item) => item.id !== response.invitation.id)]);
-      setCurrentCapability((current) => ({ ...current, reservedSeats: current.reservedSeats + 1 }));
-      setInviteDraft({ email: "", ...emptyResponsibilities });
-      setInviteOpen(false);
-    } catch (inviteError) {
-      setError({ scope: "invite", message: safeTeamError(inviteError, "The invitation could not be created. Try again.") });
-    } finally {
-      setInvitePending(false);
-    }
-  }
 
   async function rotateInvitation(invitation: TeamInvitation) {
     clearMessages();
@@ -292,8 +252,7 @@ export function YourTeamPanel({
         <div className="flex flex-wrap items-end justify-between gap-3 border-b border-foreground/8 pb-3">
           <h3 id="team-members-heading" className="font-display text-[20px] font-semibold tracking-[-0.02em] text-foreground">People</h3>
           {isOwner && seatsFull ? <p className="text-[12px] font-medium text-muted-foreground">All {seatLimit} people are already here or invited.</p> : null}
-          {isOwner && !seatsFull && !inviteOpen && !inviteLink ? <Button type="button" size="sm" onClick={openInviteForm} leadingIcon={<UserPlus className="h-3.5 w-3.5" aria-hidden="true" />}>Invite teammate</Button> : null}
-          {isOwner && !seatsFull && !inviteOpen && inviteLink ? <Button type="button" size="sm" variant="secondary" onClick={openInviteForm} leadingIcon={<UserPlus className="h-3.5 w-3.5" aria-hidden="true" />}>Invite another teammate</Button> : null}
+          {isOwner && !seatsFull && !inviteOpen ? <Button type="button" size="sm" variant={inviteLink ? "secondary" : "primary"} onClick={openInviteForm} leadingIcon={<UserPlus className="h-3.5 w-3.5" aria-hidden="true" />}>{inviteLink ? "Invite another teammate" : "Invite teammate"}</Button> : null}
         </div>
 
         <div className="divide-y divide-foreground/8">
@@ -366,12 +325,12 @@ export function YourTeamPanel({
       </section>
 
       {isOwner && pendingInvitations.length ? (
-        <section aria-labelledby="team-invitations-heading" className="mt-7 border-t border-foreground/8 pt-5">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <h3 id="team-invitations-heading" className="font-display text-[18px] font-semibold tracking-[-0.02em] text-foreground">Invitations</h3>
-            <span className="text-[12px] font-semibold text-muted-foreground">{pendingInvitations.length} pending</span>
-          </div>
-          <div className="mt-2 divide-y divide-foreground/8 border-y border-foreground/8">
+        <details className="mt-7 border-t border-foreground/8 pt-5">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[13px] font-semibold text-foreground outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/25">
+            <span>Invitations</span>
+            <span className="text-[12px] font-semibold text-muted-foreground">· {pendingInvitations.length} pending</span>
+          </summary>
+          <div className="mt-3 divide-y divide-foreground/8 border-y border-foreground/8">
             {pendingInvitations.map((invitation) => (
               <div key={invitation.id} className="flex flex-wrap items-center justify-between gap-3 py-3.5">
                 <div className="min-w-0">
@@ -385,48 +344,7 @@ export function YourTeamPanel({
               </div>
             ))}
           </div>
-        </section>
-      ) : null}
-
-      {isOwner && inviteOpen ? (
-        <section aria-labelledby="team-invite-heading" className="mt-7 border-t border-foreground/8 pt-6">
-          <div className="flex max-w-2xl flex-wrap items-start justify-between gap-3">
-            <div>
-              <h3 id="team-invite-heading" className="font-display text-[20px] font-semibold tracking-[-0.02em] text-foreground">Invite someone</h3>
-              <p className="mt-1 text-[12px] font-medium text-muted-foreground">They’ll get a link to join {artistName}’s team.</p>
-            </div>
-            <Button type="button" variant="ghost" size="sm" onClick={closeInviteForm}>Cancel</Button>
-          </div>
-          {seatsFull ? (
-            <p className="mt-4 max-w-2xl rounded-[12px] bg-foreground/[0.035] px-3.5 py-3 text-[12px] font-semibold text-muted-foreground">All {seatLimit} people are already here or invited.</p>
-          ) : (
-            <form className="mt-5 grid max-w-2xl gap-5" aria-label="Invite teammate" onSubmit={submitInvite}>
-              <label className="grid gap-2 text-[11px] font-semibold text-foreground" htmlFor="team-invite-email">
-                Their email
-                <input
-                  id="team-invite-email"
-                  aria-label="Email address"
-                  type="email"
-                  value={inviteDraft.email}
-                  onChange={(event) => setInviteDraft((current) => ({ ...current, email: event.target.value }))}
-                  autoComplete="email"
-                  required
-                  disabled={invitePending}
-                  className="h-11 rounded-[9px] border border-foreground/12 bg-background px-3 text-[13px] font-medium outline-none transition-colors placeholder:text-muted-foreground/48 focus:border-brand-accent/55 focus:ring-2 focus:ring-brand-accent/10 disabled:opacity-55"
-                  placeholder="teammate@example.com"
-                />
-              </label>
-              <TeamRolePicker value={inviteDraft} onChange={(next) => setInviteDraft((current) => ({ ...current, ...next }))} disabled={invitePending} detailsInitiallyOpen={false} />
-              {error?.scope === "invite" ? <p role="alert" className="text-[12px] font-semibold text-destructive">{error.message}</p> : null}
-              <div className="flex flex-wrap items-center gap-3">
-                <Button type="submit" pending={invitePending} disabled={invitePending}>Send invitation</Button>
-                <span className="text-[11px] font-medium text-muted-foreground">
-                  {seatLimit - currentCapability.occupiedSeats - currentCapability.reservedSeats} {seatLimit - currentCapability.occupiedSeats - currentCapability.reservedSeats === 1 ? "person" : "people"} left
-                </span>
-              </div>
-            </form>
-          )}
-        </section>
+        </details>
       ) : null}
 
       {isOwner && inviteLink ? (
@@ -451,6 +369,24 @@ export function YourTeamPanel({
       ) : null}
 
       {loading ? <p className="mt-5 text-[12px] font-medium text-muted-foreground">Refreshing team details…</p> : null}
+
+      <TeamInviteDialog
+        open={inviteOpen}
+        onOpenChange={setInviteOpen}
+        teamName={currentCapability.teamName?.trim() || "Your team"}
+        artistName={artistName}
+        remainingSeats={Math.max(0, seatLimit - currentCapability.occupiedSeats - currentCapability.reservedSeats)}
+        onInvite={async (input) => {
+          const responsibilities = validateResponsibilities(input);
+          if (!responsibilities.valid) throw new Error(responsibilities.message);
+          return service.invite({ artistWorkspaceId: scope.artistWorkspaceId, ...responsibilities.value, email: input.email });
+        }}
+        onInviteCreated={(response) => {
+          setInvitations((current) => [response.invitation, ...current.filter((item) => item.id !== response.invitation.id)]);
+          setCurrentCapability((current) => ({ ...current, reservedSeats: current.reservedSeats + 1 }));
+          setMutationNotice(response.emailStatus === "sent" ? "Invitation sent." : response.emailStatus === "failed" ? "Invite created. The email did not send." : "Invite link ready.");
+        }}
+      />
     </section>
   );
 }
@@ -458,14 +394,7 @@ export function YourTeamPanel({
 function TeamHeading({ teamName, artistName, countLabel }: { teamName?: string | null; artistName: string; countLabel?: string }) {
   return (
     <div className="mb-5 border-b border-foreground/8 pb-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/72">Team</p>
-          <h2 className="mt-1 truncate font-display text-[26px] font-semibold tracking-[-0.025em] text-foreground">{teamName?.trim() || "Your team"}</h2>
-        </div>
-        {countLabel ? <p className="text-[13px] font-semibold text-brand-accent">{countLabel}</p> : null}
-      </div>
-      <p className="mt-2 text-[13px] font-medium text-muted-foreground">Working with {artistName}.</p>
+      <WorkspaceIdentity variant="page" teamName={teamName} artistName={artistName} isTeamPlan countLabel={countLabel} />
     </div>
   );
 }
@@ -494,12 +423,6 @@ function validateResponsibilities(value: TeamResponsibilities): { valid: true; v
   if (tags.length > MAX_TAGS) return { valid: false, message: "Choose 12 responsibilities or fewer." };
   if (tags.some((tag) => tag.length > MAX_TAG_LENGTH)) return { valid: false, message: "Keep each responsibility to 48 characters or fewer." };
   return { valid: true, value: { operatingTitle: title || null, responsibilityTags: tags } };
-}
-
-function deliveryStatusMessage(status?: TeamInvitationDeliveryStatus) {
-  if (status === "sent") return "Invitation sent. Copy link ready.";
-  if (status === "failed") return "Email did not send. Copy link ready.";
-  return "Invite link ready.";
 }
 
 function initials(value: string) {

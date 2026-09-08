@@ -49,10 +49,17 @@ import { writeWorkspaceEvent } from "../_shared/workspaceEvents.ts";
 import { loadFocusedSongDocuments, persistFocusedSongDocumentDraft } from "../_shared/songDocumentDraft.ts";
 import { attachedKnowledge, attachmentMetadata, resolveManagerConversationAttachments, type ManagerConversationAttachment } from "../_shared/manager-conversation/attachments.ts";
 import { assertReleasedCatalogManagerPolicy } from "../_shared/managerReleasedCatalogPolicy.ts";
+import {
+  ensureManagerConversationRun,
+  findManagerConversationRun,
+  managerConversationRequestPayload,
+  managerConversationRunIsActive,
+  normalizeManagerConversationRequestId,
+} from "../_shared/managerConversationReliability.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-request-id",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -60,6 +67,7 @@ type ManagerConversationInput = {
   accountId: string;
   artistWorkspaceId: string;
   artistId: string;
+  requestId?: string;
   conversationId?: string;
   retryMessageId?: string;
   taskId?: string;
@@ -106,6 +114,7 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
 
       try {
         input = (await request.json()) as ManagerConversationInput;
+        normalizeManagerConversationRequestId(input, request.headers.get("x-request-id"));
         validateInput(input);
 
         const authHeader = request.headers.get("Authorization");
@@ -128,8 +137,17 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
         failureStage = "entitlement";
         await assertActiveWorkspaceEntitlement(db, input);
         await assertWorkspace(db, input);
+        const existingRun = await findManagerConversationRun(db, input);
+        if (existingRun?.status === "completed") {
+          emit({ type: "conversation.completed", conversation: await loadReplayConversation(db, input, existingRun.conversation_id), refresh: {} });
+          return;
+        }
+        if (existingRun && managerConversationRunIsActive(existingRun)) {
+          emit({ type: "error", message: "Manager is still processing this request. Try again in a moment.", requestId: input.requestId, runId: existingRun.id });
+          return;
+        }
         failureStage = "conversation";
-        conversationId = await ensureConversation(db, input);
+        conversationId = existingRun?.conversation_id ?? await ensureConversation(db, input);
         failureStage = "focused_music_subject";
         const focusedMusicSubject = await ensureMusicConversationSubjectLink(db, input, conversationId);
         const attachments = await resolveManagerConversationAttachments(db, input, focusedMusicSubject ?? undefined);
@@ -162,15 +180,24 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
         emit({ type: "run.step", label: "Reading workspace packet", status: "completed" });
 
         failureStage = "run_creation";
-        runId = await createManagerRun(db, input, conversationId, packet);
+        const run = await ensureManagerConversationRun(db, input, conversationId, packet, existingRun, managerConversationRequestPayload(input));
+        runId = run.runId;
+        if (run.state === "completed") {
+          emit({ type: "conversation.completed", conversation: await loadReplayConversation(db, input, conversationId), refresh: {} });
+          return;
+        }
+        if (run.state === "in_progress") {
+          emit({ type: "error", message: "Manager is still processing this request. Try again in a moment.", requestId: input.requestId, runId });
+          return;
+        }
         usageId = await createUsageEvent(db, input, runId);
         const turn = classifyManagerTurn({ body: input.body, contextAnswers: input.contextAnswers });
         emit({ type: "run.step", runId, label: managerAnalysisPhaseLabel(turn.mode), status: "running" });
 
         // Each turn is intentionally grounded from the bounded source-of-truth opening
-    // brief. Do not chain opaque provider history on top of that packet: it duplicates
-    // context, grows token usage across turns and caused production TPM failures.
-    const previousResponseId = "";
+        // brief. Do not chain opaque provider history on top of that packet: it duplicates
+        // context, grows token usage across turns and caused production TPM failures.
+        const previousResponseId = "";
         failureStage = "model_generation";
         const { output, usage, responseId, toolTrace, toolCreatedWork, releaseSuccessToolResults } = await callOpenAIManagerConversation(
           db,
@@ -274,6 +301,7 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
           body: output.responseBody,
           manager_synthesis_run_id: runId,
           metadata: {
+            requestId: input.requestId,
             classification: output.classification,
             actionPolicy: output.actionPolicy,
             confidence: output.confidence,
@@ -330,7 +358,7 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
           operation: "generate_reply",
           source: "edge",
           publicMessage: failure.publicMessage,
-          requestId: request.headers.get("x-request-id") ?? undefined,
+          requestId: input?.requestId ?? request.headers.get("x-request-id") ?? undefined,
           userId,
           accountEmail,
           accountId: input?.accountId,
@@ -348,7 +376,7 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
         if (runId) await markRunFailedSafe(runId, failure.internalMessage, errorEventId);
         else if (db && input && conversationId) await persistPreflightFailureSafe(db, input, conversationId, failureStage, failure.internalMessage);
         if (usageId) await markUsageFailedSafe(usageId, failure.internalMessage, errorEventId);
-        emit({ type: "error", message: failure.publicMessage, runId, errorEventId });
+        emit({ type: "error", message: failure.publicMessage, requestId: input?.requestId, runId, errorEventId });
       } finally {
         if (!streamClosed) {
           streamClosed = true;
@@ -825,7 +853,34 @@ async function selectConversationHistory(db: any, input: ManagerConversationInpu
   return (data ?? []).reverse();
 }
 
+async function loadReplayConversation(db: any, input: ManagerConversationInput, conversationId?: string | null) {
+  if (!conversationId) throw new Error("Manager replay is missing its conversation.");
+  const { data: conversation, error: conversationError } = await db
+    .from("conversations")
+    .select("id,topic,status,summary,last_update_at")
+    .eq("id", conversationId)
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .maybeSingle();
+  if (conversationError) throw conversationError;
+  if (!conversation) throw new Error("Manager replay conversation was not found.");
+  const messages = await selectConversationMessages(db, input, conversationId);
+  return toConversationViewModel(conversation, messages, input.taskId);
+}
+
 async function insertConversationMessage(db: any, input: ManagerConversationInput, conversationId: string, message: Record<string, unknown>) {
+  const managerRunId = typeof message.manager_synthesis_run_id === "string" ? message.manager_synthesis_run_id : "";
+  if (managerRunId) {
+    const { data: existing, error: existingError } = await db
+      .from("conversation_messages")
+      .select("id,conversation_id,speaker,label,body,metadata,created_at")
+      .eq("manager_synthesis_run_id", managerRunId)
+      .eq("speaker", "manager")
+      .maybeSingle();
+    if (existingError) throw existingError;
+    if (existing) return existing;
+  }
   const { data, error } = await db
     .from("conversation_messages")
     .insert({
@@ -833,6 +888,7 @@ async function insertConversationMessage(db: any, input: ManagerConversationInpu
       artist_workspace_id: input.artistWorkspaceId,
       artist_id: input.artistId,
       conversation_id: conversationId,
+      request_id: input.requestId ?? null,
       ...message,
     })
     .select("id,conversation_id,speaker,label,body,metadata,created_at")
@@ -847,6 +903,20 @@ async function resolveArtistMessageForRun(
   conversationId: string,
   message: Record<string, unknown>,
 ) {
+  if (!input.retryMessageId && input.requestId) {
+    const { data: existing, error: existingError } = await db
+      .from("conversation_messages")
+      .select("id,conversation_id,speaker,label,body,metadata,created_at")
+      .eq("account_id", input.accountId)
+      .eq("artist_workspace_id", input.artistWorkspaceId)
+      .eq("artist_id", input.artistId)
+      .eq("conversation_id", conversationId)
+      .eq("speaker", "artist")
+      .eq("request_id", input.requestId)
+      .maybeSingle();
+    if (existingError) throw existingError;
+    if (existing) return existing;
+  }
   if (!input.retryMessageId) return insertConversationMessage(db, input, conversationId, message);
   const { data, error } = await db
     .from("conversation_messages")
@@ -1282,37 +1352,23 @@ function stringValue(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : "";
 }
 
-async function createManagerRun(db: any, input: ManagerConversationInput, conversationId: string, packet: unknown) {
-  const { data, error } = await db
-    .from("manager_synthesis_runs")
-    .insert({
-      account_id: input.accountId,
-      artist_workspace_id: input.artistWorkspaceId,
-      artist_id: input.artistId,
-      trigger_type: "conversation",
-      conversation_id: conversationId,
-      status: "running",
-      classification: "manager_conversation_router_v1",
-      confidence: "unknown",
-      context_payload: buildManagerConversationModelContext(input, packet, conversationId),
-      steps_payload: [{ step: "packet_built", status: "completed" }, { step: "manager_synthesis", status: "running" }],
-      action_plan: [],
-      limitations: [],
-      started_at: new Date().toISOString(),
-    })
-    .select("id")
-    .single();
-  if (error) throw error;
-  return data.id as string;
-}
-
 async function persistActions(db: any, input: ManagerConversationInput, runId: string, output: ManagerConversationOutput) {
   for (const [index, action] of output.proposedActions.entries()) {
+    const actionKey = `${input.requestId ?? runId}:proposed-action:${index}`;
+    const { data: existing, error: existingError } = await db.from("manager_run_actions")
+      .select("id")
+      .eq("manager_synthesis_run_id", runId)
+      .eq("action_key", actionKey)
+      .maybeSingle();
+    if (existingError) throw existingError;
+    if (existing) continue;
+
     const { error } = await db.from("manager_run_actions").insert({
       account_id: input.accountId,
       artist_workspace_id: input.artistWorkspaceId,
       artist_id: input.artistId,
       manager_synthesis_run_id: runId,
+      action_key: actionKey,
       order_index: index,
       action_type: action.actionType,
       target_type: action.targetType,
@@ -1320,7 +1376,7 @@ async function persistActions(db: any, input: ManagerConversationInput, runId: s
       approval_required: action.approvalRequired,
       payload: action,
     });
-    if (error) throw error;
+    if (error && !isUniqueViolation(error)) throw error;
   }
 }
 
@@ -1356,7 +1412,7 @@ async function persistMemory(db: any, input: ManagerConversationInput, conversat
       supersedes_memory_entry_id: item.supersedes_memory_entry_id,
       created_from_run_id: runId,
     });
-    if (error) throw error;
+    if (error && !isUniqueViolation(error)) throw error;
   }
 }
 
@@ -1670,6 +1726,7 @@ function toMessageViewModel(message: any) {
     contextAnswers: normalizeContextAnswers(metadata.contextAnswers),
     attachments: normalizeConversationAttachments(metadata.attachments),
     contextRequestId: typeof metadata.contextRequestId === "string" && metadata.contextRequestId.trim() ? metadata.contextRequestId.trim() : undefined,
+    requestId: typeof metadata.requestId === "string" && metadata.requestId.trim() ? metadata.requestId.trim() : undefined,
     createdAt: message.created_at,
     status: "sent",
   };
@@ -1713,6 +1770,7 @@ function readPlaybookKeyList(value: unknown): PlaybookKey[] {
 
 function managerArtistMessageMetadata(input: ManagerConversationInput, attachments: ManagerConversationAttachment[] = []) {
   return {
+    requestId: input.requestId ?? "",
     taskId: input.taskId ?? "",
     contextRequestId: input.contextRequestId ?? "",
     contextAnswers: normalizeContextAnswers(input.contextAnswers),
@@ -1869,6 +1927,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function numberOrNull(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function isUniqueViolation(error: unknown) {
+  if (!error) return false;
+  if (typeof error === "object" && "code" in error && (error as { code?: unknown }).code === "23505") return true;
+  return /duplicate key|unique constraint/i.test(String(error));
 }
 
 function describeError(error: unknown, fallback: string) {

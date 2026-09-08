@@ -17,6 +17,11 @@ describe("team invitation email", () => {
     });
 
     expect(result.to).toBe("member@example.com");
+    expect(result.subject).toBe("Join Northstar & Co on Desk");
+    expect(result.html).toContain("For Northstar");
+    expect(result.html).toContain("Join team");
+    expect(result.html).not.toContain("You’ve been invited to work with");
+    expect(result.html).not.toContain("Operating title:");
     expect(result.html).toContain(`https://app.example.com/join#token=${token}`);
     expect(result.html).toContain("Release &lt;lead&gt;");
     expect(result.metadata).not.toHaveProperty("token");

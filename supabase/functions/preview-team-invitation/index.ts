@@ -34,11 +34,13 @@ Deno.serve(withAppErrorCapture("preview-team-invitation", async (request) => {
     const row = data as Record<string, unknown>;
     const teamName = typeof row.teamName === "string" ? row.teamName.trim() : "";
     const artistName = typeof row.artistName === "string" ? row.artistName.trim() : "";
+    const invitedEmail = typeof row.invitedEmail === "string" ? row.invitedEmail.trim().toLowerCase() : "";
     const expiresAt = typeof row.expiresAt === "string" ? row.expiresAt : "";
-    if (!teamName || !artistName || !expiresAt) return respond({ error: "Invitation is unavailable." }, 410);
+    if (!teamName || !artistName || !/^\S+@\S+\.\S+$/.test(invitedEmail) || !expiresAt) return respond({ error: "Invitation is unavailable." }, 410);
     return respond({
       teamName,
       artistName,
+      invitedEmail: invitedEmail,
       operatingTitle: typeof row.operatingTitle === "string" ? row.operatingTitle.trim() || null : null,
       responsibilityTags: Array.isArray(row.responsibilityTags) ? row.responsibilityTags.filter((value): value is string => typeof value === "string").map((value) => value.trim()).filter(Boolean).slice(0, 12) : [],
       expiresAt,

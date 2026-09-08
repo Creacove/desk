@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
 import type { CleanProductionView } from "../types/cleanProduction";
 import { Button } from "./desktopPrimitives";
+import { WorkspaceIdentity } from "./workspaceIdentity";
 
 export function BrandMark({
   size = "md",
@@ -302,6 +303,8 @@ export function sectionForView(view: CleanProductionView): NavSection {
 export function DeskRail({
   active,
   teamName,
+  artistName,
+  isTeamPlan,
   onNavigate,
   onSignOut,
   activeMissionCount = 0,
@@ -310,6 +313,8 @@ export function DeskRail({
 }: {
   active: NavSection;
   teamName?: string | null;
+  artistName?: string;
+  isTeamPlan?: boolean;
   onNavigate: (view: CleanProductionView) => void;
   onSignOut?: () => void;
   activeMissionCount?: number;
@@ -326,7 +331,12 @@ export function DeskRail({
           <BrandMark size="sm" />
           <div className="min-w-0">
             <p className="font-display truncate text-[14px] font-semibold tracking-[-0.015em] text-foreground">Ordersounds</p>
-            <p className="font-ui mt-0.5 truncate text-[11px] font-medium uppercase tracking-[0.07em] text-muted-foreground/68">{teamName?.trim() || "Artist desk"}</p>
+            <WorkspaceIdentity
+              teamName={teamName}
+              artistName={artistName ?? teamName ?? "Artist desk"}
+              isTeamPlan={isTeamPlan ?? Boolean(teamName?.trim())}
+              className="mt-0.5"
+            />
           </div>
         </div>
         <div className="h-px shrink-0 bg-foreground/7" />
@@ -429,6 +439,9 @@ function NavButton({
 export function MobileChrome({
   active,
   title,
+  teamName,
+  artistName,
+  isTeamPlan,
   onNavigate,
   notificationCount = 0,
   onOpenNotifications,
@@ -439,6 +452,9 @@ export function MobileChrome({
 }: {
   active: NavSection;
   title: string;
+  teamName?: string | null;
+  artistName?: string;
+  isTeamPlan?: boolean;
   onNavigate: (view: CleanProductionView) => void;
   notificationCount?: number;
   onOpenNotifications?: () => void;
@@ -452,9 +468,14 @@ export function MobileChrome({
       {showTopbar ? (
         <header
           data-testid="mobile-app-topbar"
-          className="sticky top-0 z-40 -mx-3 mb-3 flex min-h-[64px] items-center justify-between border-b border-foreground/8 bg-background/94 px-3 py-2.5 backdrop-blur-xl lg:hidden"
+          className="sticky top-0 z-40 -mx-3 mb-3 flex min-h-[72px] items-center justify-between border-b border-foreground/8 bg-background/94 px-3 py-2.5 backdrop-blur-xl lg:hidden"
         >
           <div className="min-w-0">
+            <WorkspaceIdentity
+              teamName={teamName}
+              artistName={artistName ?? teamName ?? "Artist desk"}
+              isTeamPlan={isTeamPlan ?? Boolean(teamName?.trim())}
+            />
             <p className="font-ui truncate text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/62">
               {active === "settings" ? "Account" : "Desk"}
             </p>

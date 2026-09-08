@@ -13,7 +13,6 @@ export type AcceptTeamInvitationProps = {
   user: ProductionUser | null;
   preview?: TeamInvitationPreview | null;
   onAccepted?: (scope: WorkspaceScope) => void;
-  onAuthenticationRequired?: () => void;
   onCancel?: () => void;
   storage?: Storage;
   location?: Pick<Location, "hash" | "pathname" | "search">;
@@ -25,7 +24,6 @@ export function AcceptTeamInvitation({
   user,
   preview,
   onAccepted,
-  onAuthenticationRequired,
   onCancel,
   storage = typeof window === "undefined" ? undefined : window.sessionStorage,
   location = typeof window === "undefined" ? undefined : window.location,
@@ -102,16 +100,8 @@ export function AcceptTeamInvitation({
   if (!user) {
     return (
       <JoinFrame>
-        {preview ? <InvitationPreviewCard preview={preview} /> : null}
-        <JoinStatus
-          icon={<Link2 className="h-5 w-5" aria-hidden="true" />}
-          title={preview ? "Sign in to join this workspace." : "Sign in to accept this invitation."}
-          body={preview ? `You’ve been invited to work with ${preview.artistName}. Your invitation stays here while you authenticate.` : "Use the account that should belong to this artist workspace. Your invitation stays here while you authenticate."}
-        />
-        <div className="mt-7 flex flex-wrap gap-2.5">
-          {onAuthenticationRequired ? <Button onClick={onAuthenticationRequired}>Sign in</Button> : null}
-          {onCancel ? <Button variant="secondary" onClick={onCancel}>Cancel</Button> : null}
-        </div>
+        <JoinStatus icon={<Link2 className="h-5 w-5" aria-hidden="true" />} title="Invitation ready" body="Continue with the invitation sign-in screen to join this workspace." />
+        {onCancel ? <Button variant="secondary" className="mt-7" onClick={onCancel}>Cancel</Button> : null}
       </JoinFrame>
     );
   }

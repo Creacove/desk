@@ -8,7 +8,68 @@ import type { ArtistProfileViewModel } from "./types/cleanProduction";
 describe("SettingsScreen", () => {
   afterEach(() => cleanup());
 
-  it("defaults to Profile and removes artist intelligence from settings", () => {
+  it("keeps team identity, signed-in identity, and the billing plan distinct", () => {
+    render(
+      <SettingsScreen
+        profile={profileWithArtistIntelligence()}
+        accountUser={{ id: "operator-1", email: "ada@example.com", displayName: "Ada Mensah" }}
+        onChange={vi.fn()}
+        onBack={vi.fn()}
+        workspace={workspaceWithAccess({ accessType: "paid_subscription", accessStatus: "active", subscriptionStatus: "active" })}
+        teamCapability={{
+          accountId: "account-1",
+          artistWorkspaceId: "workspace-1",
+          artistId: "artist-1",
+          teamName: "CBA — House 3",
+          planKey: "team_6",
+          enabled: true,
+          entitled: true,
+          source: "subscription",
+          seatLimit: 6,
+          occupiedSeats: 1,
+          reservedSeats: 0,
+          endsAt: null,
+        }}
+      />,
+    );
+
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Account", "Artist", "Team", "Preferences", "Billing"]);
+    expect(screen.getByRole("tab", { name: "Account" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByLabelText("Name")).toHaveValue("Ada Mensah");
+
+    fireEvent.click(screen.getByRole("tab", { name: "Billing" }));
+    expect(screen.getByText("Desk Team")).toBeInTheDocument();
+    expect(screen.getByText("CBA — House 3")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Account" }));
+    expect(screen.getByLabelText("Name")).toHaveValue("Ada Mensah");
+  });
+
+  it("names a paid solo workspace Desk Pro and a beta workspace Private beta", () => {
+    const { rerender } = render(
+      <SettingsScreen
+        profile={profileWithArtistIntelligence()}
+        onChange={vi.fn()}
+        onBack={vi.fn()}
+        workspace={workspaceWithAccess({ accessType: "paid_subscription", accessStatus: "active", subscriptionStatus: "active" })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Billing" }));
+    expect(screen.getByText("Desk Pro")).toBeInTheDocument();
+
+    rerender(
+      <SettingsScreen
+        profile={profileWithArtistIntelligence()}
+        onChange={vi.fn()}
+        onBack={vi.fn()}
+        workspace={workspaceWithAccess({ accessType: "private_beta", accessStatus: "active" })}
+      />,
+    );
+    expect(screen.getByText("Private beta")).toBeInTheDocument();
+  });
+
+  it("defaults to Account and keeps artist intelligence out of settings", () => {
     const onChange = vi.fn();
     render(
       <SettingsScreen
@@ -23,13 +84,14 @@ describe("SettingsScreen", () => {
 
     expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Artist profile." })).not.toBeInTheDocument();
-    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Profile", "Billing", "Preferences", "Account"]);
-    expect(screen.getByRole("tab", { name: "Profile" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Account", "Artist", "Preferences", "Billing"]);
+    expect(screen.getByRole("tab", { name: "Account" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("tab", { name: "Billing" })).toHaveAttribute("aria-selected", "false");
     expect(screen.getByRole("tab", { name: "Preferences" })).toHaveAttribute("aria-selected", "false");
-    expect(screen.getByRole("tab", { name: "Account" })).toHaveAttribute("aria-selected", "false");
+    expect(screen.getByRole("tab", { name: "Artist" })).toHaveAttribute("aria-selected", "false");
     expect(screen.getByRole("tablist", { name: "Settings sections" })).toHaveClass("workspace-tab-rail");
-    expect(document.querySelector("#settings-panel-profile")).toHaveClass("os-room-rail");
+    expect(document.querySelector("#settings-panel-account")).toHaveClass("os-room-rail");
+    fireEvent.click(screen.getByRole("tab", { name: "Artist" }));
     expect(screen.getByLabelText("Artist name")).toBeInTheDocument();
     expect(screen.queryByText("Artist intelligence")).not.toBeInTheDocument();
     expect(screen.queryByText("Chartmetric shows Burna Boy has strong verified artist context.")).not.toBeInTheDocument();
@@ -49,6 +111,7 @@ describe("SettingsScreen", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("tab", { name: "Artist" }));
     expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
     fireEvent.change(screen.getByLabelText("Artist name"), { target: { value: "Burna Boy International" } });
     expect(onSaveProfile).not.toHaveBeenCalled();
@@ -71,6 +134,7 @@ describe("SettingsScreen", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("tab", { name: "Artist" }));
     fireEvent.change(screen.getByLabelText("Artist goals"), { target: { value: "Build a worldwide touring plan." } });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
@@ -116,6 +180,7 @@ describe("SettingsScreen", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("tab", { name: "Artist" }));
     for (const label of ["Artist name", "Artist stage", "Home market", "Genre", "Monthly budget", "TikTok", "Instagram", "YouTube", "X"]) {
       expect(screen.getByLabelText(label)).toBeEnabled();
     }
@@ -172,7 +237,7 @@ describe("SettingsScreen", () => {
 
     expect(screen.queryByText("Private beta")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "Billing" }));
-    expect(screen.getByText("Private beta")).toBeTruthy();
+    expect(screen.getAllByText("Private beta")).toHaveLength(1);
     expect(screen.getByText("Aug 12, 2026")).toBeTruthy();
     expect(screen.queryByLabelText("New password")).not.toBeInTheDocument();
 
@@ -208,6 +273,7 @@ describe("SettingsScreen", () => {
     );
 
     fireEvent.click(screen.getByRole("tab", { name: "Billing" }));
+    expect(screen.getByText("No paid plan")).toBeInTheDocument();
     expect(screen.getByText("Active access")).toBeInTheDocument();
     expect(screen.queryByText("No active access")).not.toBeInTheDocument();
   });
@@ -268,5 +334,20 @@ function profileWithArtistIntelligence(): ArtistProfileViewModel {
       socialRead: "TikTok track posts: 15,763,624 posts",
       limitations: ["Attention signal, not conversion proof."],
     },
+  };
+}
+
+function workspaceWithAccess(overrides: Partial<NonNullable<React.ComponentProps<typeof SettingsScreen>["workspace"]>>) {
+  return {
+    accountId: "account-1",
+    artistWorkspaceId: "workspace-1",
+    artistId: "artist-1",
+    artistName: "Godwinton",
+    workspaceName: "Godwinton Desk",
+    status: "active" as const,
+    spotifyConnected: true,
+    contextComplete: true,
+    entitlementActive: true,
+    ...overrides,
   };
 }

@@ -261,6 +261,7 @@ export type ConversationViewModel = {
     speaker: "artist" | "manager";
     label: string;
     body: string;
+    requestId?: string;
     status?: "sending" | "streaming" | "sent" | "failed";
     createdWork?: Array<{
       type: "music_item" | "mission" | "task";
@@ -881,6 +882,7 @@ export type CleanProductionRepositories = {
     loadConversation?: (conversationId: string) => Promise<ConversationViewModel | null>;
     loadConversations: () => Promise<ConversationViewModel[]>;
     sendMessage?: (input: {
+      requestId?: string;
       conversationId?: string;
       retryMessageId?: string;
       body: string;
@@ -892,6 +894,7 @@ export type CleanProductionRepositories = {
     }) => Promise<ConversationViewModel>;
     sendMessageStream?: (
       input: {
+        requestId?: string;
         conversationId?: string;
         retryMessageId?: string;
         body: string;

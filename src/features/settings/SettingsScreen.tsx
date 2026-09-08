@@ -6,7 +6,7 @@ import { cn } from "../../lib/utils";
 import type { WorkspaceTeamService } from "../../services/workspaceTeamService";
 import type { ResolvedThemeMode, ThemeMode } from "../../app/theme";
 import type { ArtistProfileViewModel } from "../../types/cleanProduction";
-import type { ProductionWorkspace } from "../../types/productionApp";
+import type { ProductionUser, ProductionWorkspace } from "../../types/productionApp";
 import type { WorkspaceScope, WorkspaceTeamCapability } from "../../types/workspaceTeam";
 import { YourTeamPanel } from "../team/YourTeamPanel";
 
@@ -16,6 +16,7 @@ export function SettingsScreen({
   onSaveProfile,
   onBack: _onBack,
   onSignOut,
+  accountUser,
   accountEmail,
   themeMode = "system",
   resolvedThemeMode = "light",
@@ -38,6 +39,7 @@ export function SettingsScreen({
   onSaveProfile?: (profile: ArtistProfileViewModel) => Promise<void>;
   onBack: () => void;
   onSignOut?: () => void;
+  accountUser?: ProductionUser;
   accountEmail?: string;
   themeMode?: ThemeMode;
   resolvedThemeMode?: ResolvedThemeMode;
@@ -56,9 +58,9 @@ export function SettingsScreen({
   teamViewerAccessRole?: "owner" | "member";
   onTeamRosterChanged?: () => void | Promise<void>;
 }) {
-  const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
+  const [activeTab, setActiveTab] = useState<SettingsTab>("account");
   const [teamCapability, setTeamCapability] = useState<WorkspaceTeamCapability | null>(initialTeamCapability ?? null);
-  const teamEnabled = teamCapability?.planKey === "team_6";
+  const teamEnabled = teamCapability?.planKey === "team_6" && teamCapability.enabled && teamCapability.entitled;
 
   useEffect(() => {
     if (!teamService || !teamWorkspaceId) {
@@ -71,25 +73,25 @@ export function SettingsScreen({
       .then((nextCapability) => {
         if (!cancelled) {
           setTeamCapability(nextCapability);
-          if (nextCapability.planKey !== "team_6") setActiveTab((current) => current === "team" ? "profile" : current);
+          if (nextCapability.planKey !== "team_6" || !nextCapability.enabled || !nextCapability.entitled) setActiveTab((current) => current === "team" ? "account" : current);
         }
       })
       .catch(() => {
         // A failed capability read keeps the legacy Settings surface intact.
         if (!cancelled) {
           setTeamCapability(initialTeamCapability ?? null);
-          if (!initialTeamCapability || initialTeamCapability.planKey !== "team_6") setActiveTab((current) => current === "team" ? "profile" : current);
+          if (!initialTeamCapability || initialTeamCapability.planKey !== "team_6" || !initialTeamCapability.enabled || !initialTeamCapability.entitled) setActiveTab((current) => current === "team" ? "account" : current);
         }
       });
     return () => { cancelled = true; };
   }, [initialTeamCapability, teamService, teamWorkspaceId]);
 
   const tabs: Array<{ id: SettingsTab; label: string }> = [
-    { id: "profile", label: "Profile" },
-    { id: "billing", label: "Billing" },
-    { id: "preferences", label: "Preferences" },
     { id: "account", label: "Account" },
+    { id: "artist", label: "Artist" },
     ...(teamEnabled ? [{ id: "team" as const, label: "Team" }] : []),
+    { id: "preferences", label: "Preferences" },
+    { id: "billing", label: "Billing" },
   ];
 
   return (
@@ -105,7 +107,7 @@ export function SettingsScreen({
             items={tabs}
             active={activeTab}
             onChange={setActiveTab}
-            className={cn(teamEnabled ? "grid-cols-5" : "grid-cols-4", "lg:max-w-[36rem]")}
+            className={cn(teamEnabled ? "grid-cols-5" : "grid-cols-4", "lg:max-w-[40rem]")}
           />
         </div>
 
@@ -115,17 +117,18 @@ export function SettingsScreen({
           aria-labelledby={`settings-tab-${activeTab}`}
           className="os-room-rail min-w-0"
         >
-          {activeTab === "profile" ? <ProfileSettings profile={profile} onChange={onChange} onSaveProfile={onSaveProfile} /> : null}
-          {activeTab === "billing" ? (workspace ? <AccessSummary workspace={workspace} onManageBilling={teamEnabled && teamViewerAccessRole !== "owner" ? undefined : onManageBilling} onChoosePlan={teamEnabled && teamViewerAccessRole !== "owner" ? undefined : onChoosePlan} /> : <AccessEmptyState />) : null}
-          {activeTab === "preferences" ? (
-            <PreferencesSettings mode={themeMode} resolvedMode={resolvedThemeMode} onThemeModeChange={onThemeModeChange} />
-          ) : null}
           {activeTab === "account" ? (
             <AccountSettings
+              accountUser={accountUser}
               onUpdatePassword={onUpdatePassword}
               onSignOut={onSignOut}
               accountEmail={accountEmail}
             />
+          ) : null}
+          {activeTab === "artist" ? <ProfileSettings profile={profile} onChange={onChange} onSaveProfile={onSaveProfile} /> : null}
+          {activeTab === "billing" ? (workspace ? <AccessSummary workspace={workspace} teamName={teamEnabled ? teamCapability?.teamName : undefined} isTeamPlan={teamEnabled} onManageBilling={teamEnabled && teamViewerAccessRole !== "owner" ? undefined : onManageBilling} onChoosePlan={teamEnabled && teamViewerAccessRole !== "owner" ? undefined : onChoosePlan} /> : <AccessEmptyState />) : null}
+          {activeTab === "preferences" ? (
+            <PreferencesSettings mode={themeMode} resolvedMode={resolvedThemeMode} onThemeModeChange={onThemeModeChange} />
           ) : null}
           {activeTab === "team" ? (
             teamCapability && teamService && teamScope && teamViewerUserId && teamArtistName ? (
@@ -149,7 +152,7 @@ export function SettingsScreen({
   );
 }
 
-type SettingsTab = "profile" | "billing" | "preferences" | "account" | "team";
+type SettingsTab = "artist" | "billing" | "preferences" | "account" | "team";
 
 function ProfileSettings({
   profile,
@@ -274,10 +277,14 @@ function SettingsGroup({ title, children }: { title: string; children: ReactNode
 
 function AccessSummary({
   workspace,
+  teamName,
+  isTeamPlan,
   onManageBilling,
   onChoosePlan,
 }: {
   workspace: ProductionWorkspace;
+  teamName?: string | null;
+  isTeamPlan?: boolean;
   onManageBilling?: () => Promise<void> | void;
   onChoosePlan?: () => Promise<void> | void;
 }) {
@@ -287,15 +294,18 @@ function AccessSummary({
   const accessLabel = paid
     ? "Paid subscription"
     : workspace.accessType === "private_beta"
-      ? "Private beta"
+      ? workspace.entitlementActive ? "Active access" : "Expired access"
       : workspace.entitlementActive
         ? "Active access"
-        : "No active access";
+      : "No active access";
+  const planLabel = workspacePlanLabel(workspace, Boolean(isTeamPlan));
 
   return (
     <div className="w-full">
       <SettingsSectionHeading title="Billing" />
+      {teamName ? <p className="mb-5 text-[13px] font-medium text-muted-foreground">{teamName}</p> : null}
       <dl className="border-t border-foreground/8 text-[13px]">
+        <AccessRow label="Plan" value={planLabel} />
         <AccessRow label="Access" value={accessLabel} />
         <AccessRow label="Status" value={workspace.accessStatus ?? (workspace.entitlementActive ? "Active" : "Inactive")} />
         {workspace.accessStartsAt ? <AccessRow label="Started" value={formatDate(workspace.accessStartsAt)} /> : null}
@@ -367,17 +377,19 @@ function PreferencesSettings({
 }
 
 function AccountSettings({
+  accountUser,
   accountEmail,
   onUpdatePassword,
   onSignOut,
 }: {
+  accountUser?: ProductionUser;
   accountEmail?: string;
   onUpdatePassword?: (input: { password: string }) => Promise<void>;
   onSignOut?: () => void;
 }) {
   return (
     <div className="w-full border-t border-foreground/8">
-      <AccountIdentity accountEmail={accountEmail} />
+      <AccountIdentity accountUser={accountUser} accountEmail={accountEmail} />
       {onUpdatePassword ? <PasswordSettings onUpdatePassword={onUpdatePassword} /> : null}
       {onSignOut ? (
         <section className="grid gap-4 border-b border-foreground/8 py-6 sm:grid-cols-[10rem_minmax(0,1fr)] sm:items-center sm:gap-8">
@@ -394,13 +406,17 @@ function AccountSettings({
   );
 }
 
-function AccountIdentity({ accountEmail }: { accountEmail?: string }) {
+function AccountIdentity({ accountUser, accountEmail }: { accountUser?: ProductionUser; accountEmail?: string }) {
+  const displayName = accountUser?.displayName?.trim() || "Name unavailable";
   const displayEmail = accountEmail?.trim() || "Email unavailable";
 
   return (
     <section className="grid gap-4 border-b border-foreground/8 py-6 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-8">
-      <h2 className="pt-1 text-[12px] font-semibold text-foreground">Email</h2>
-      <Field label="Email address" value={displayEmail} onChange={() => undefined} type="email" readOnly />
+      <h2 className="pt-1 text-[12px] font-semibold text-foreground">Identity</h2>
+      <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+        <Field label="Name" value={displayName} onChange={() => undefined} readOnly />
+        <Field label="Email address" value={displayEmail} onChange={() => undefined} type="email" readOnly />
+      </div>
     </section>
   );
 }
@@ -449,6 +465,15 @@ function SettingsSectionHeading({ title }: { title: string }) {
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(value));
+}
+
+export function workspacePlanLabel(workspace: ProductionWorkspace, isTeamPlan = false) {
+  if (workspace.accessType === "private_beta") return "Private beta";
+  if (workspace.accessType === "paid_subscription" || (workspace.accessType == null && workspace.subscriptionStatus && workspace.subscriptionStatus !== "none")) {
+    return isTeamPlan ? "Desk Team" : "Desk Pro";
+  }
+  if (workspace.entitlementActive) return "No paid plan";
+  return "No active plan";
 }
 
 function AppearanceControl({

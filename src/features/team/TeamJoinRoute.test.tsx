@@ -20,6 +20,7 @@ function createService(overrides: Partial<WorkspaceTeamService> = {}) {
     previewInvitation: vi.fn().mockResolvedValue({
       teamName: "Northstar Team",
       artistName: "Northstar",
+      invitedEmail: "member@example.com",
       operatingTitle: "Distribution lead",
       responsibilityTags: ["distribution", "DSPs"],
       expiresAt: "2026-09-12T09:00:00.000Z",
@@ -29,7 +30,7 @@ function createService(overrides: Partial<WorkspaceTeamService> = {}) {
   } as unknown as Pick<WorkspaceTeamService, "previewInvitation" | "acceptInvitation">;
 }
 
-function renderRoute({ user = null, service = createService(), authAdapter: suppliedAuth }: { user?: ProductionUser | null; service?: ReturnType<typeof createService>; authAdapter?: ProductionAuthAdapter } = {}) {
+function renderRoute({ user = null, service = createService(), authAdapter: suppliedAuth, onNavigateToDesk: suppliedNavigate }: { user?: ProductionUser | null; service?: ReturnType<typeof createService>; authAdapter?: ProductionAuthAdapter; onNavigateToDesk?: () => void } = {}) {
   let currentUser = user;
   const authAdapter: ProductionAuthAdapter = suppliedAuth ?? {
     getSession: vi.fn().mockImplementation(async () => ({ user: currentUser })),
@@ -37,7 +38,8 @@ function renderRoute({ user = null, service = createService(), authAdapter: supp
     signUpWithPassword: vi.fn().mockImplementation(async () => ({ user: currentUser, authenticated: false, message: "Check your email to confirm the account." })),
   };
   const onAccepted = vi.fn((nextScope: WorkspaceScope) => { currentUser = member; void nextScope; });
-  return { service, authAdapter, onAccepted, ...render(<TeamJoinRoute service={service} authAdapter={authAdapter} onAccepted={onAccepted} />) };
+  const onNavigateToDesk = suppliedNavigate ?? vi.fn();
+  return { service, authAdapter, onAccepted, onNavigateToDesk, ...render(<TeamJoinRoute service={service} authAdapter={authAdapter} onAccepted={onAccepted} onNavigateToDesk={onNavigateToDesk} />) };
 }
 
 describe("TeamJoinRoute PR3 flow", () => {
@@ -47,20 +49,28 @@ describe("TeamJoinRoute PR3 flow", () => {
   });
   afterEach(cleanup);
 
+  it("opens the invite-specific account screen directly with the invited email locked", async () => {
+    renderRoute();
+
+    expect(await screen.findByRole("heading", { name: "Create your account to join." })).toBeInTheDocument();
+    expect(screen.getByLabelText("Email")).toHaveValue("member@example.com");
+    expect(screen.getByLabelText("Email")).toHaveAttribute("readonly");
+    expect(screen.getByLabelText("Your name")).toBeInTheDocument();
+    expect(screen.queryByText("Sign in to accept this invitation.")).not.toBeInTheDocument();
+  });
+
   it("shows the allowlisted invitation context and carries the token into signup verification", async () => {
     const { authAdapter, service } = renderRoute();
 
     expect(await screen.findByText("Northstar Team")).toBeInTheDocument();
-    expect(screen.getByText(/You.ve been invited to work with Northstar/i)).toBeInTheDocument();
-    expect(screen.getByText("Distribution lead")).toBeInTheDocument();
-    expect(screen.getByText("distribution")).toBeInTheDocument();
+    expect(screen.getByText("For Northstar")).toBeInTheDocument();
+    expect(screen.getByText("Distribution lead · distribution · DSPs")).toBeInTheDocument();
     expect(screen.queryByText("person@example.com")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
-    fireEvent.click(screen.getByRole("button", { name: /create account/i }));
     expect(await screen.findByLabelText("Your name")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Your name"), { target: { value: "Ada Member" } });
-    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "member@example.com" } });
+    expect(screen.getByLabelText("Email")).toHaveValue("member@example.com");
+    expect(screen.getByLabelText("Email")).toHaveAttribute("readonly");
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "password-123" } });
     fireEvent.click(screen.getByRole("button", { name: /create account/i }));
 
@@ -74,16 +84,12 @@ describe("TeamJoinRoute PR3 flow", () => {
     expect(screen.getByText(/check your email to confirm/i)).toBeInTheDocument();
   });
 
-  it("accepts into the selected workspace and announces the member landing without owner funnel controls", async () => {
-    const { onAccepted, service } = renderRoute({ user: member });
+  it("accepts into the selected workspace and redirects directly to Desk", async () => {
+    const { onAccepted, onNavigateToDesk, service } = renderRoute({ user: member });
 
-    expect(await screen.findByRole("heading", { name: "You’re in." })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Open Today" })).toBeInTheDocument();
-    expect(screen.getByText("Distribution lead")).toBeInTheDocument();
+    await waitFor(() => expect(onNavigateToDesk).toHaveBeenCalledOnce());
     expect(service.acceptInvitation).toHaveBeenCalledWith(token);
     expect(onAccepted).toHaveBeenCalledWith(scope);
-    expect(screen.queryByText(/billing/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/setup/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/manage team/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "You’re in." })).not.toBeInTheDocument();
   });
 });

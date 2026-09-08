@@ -7,6 +7,7 @@ import type { TeamInvitationPreview } from "../../types/workspaceTeam";
 
 export type InvitationAuthContext = {
   preview: TeamInvitationPreview;
+  invitedEmail: string;
   emailRedirectTo: string;
 };
 
@@ -25,8 +26,8 @@ export function FrontDoorAuthScreen({
   onAuthenticated: () => Promise<void>;
   invitation?: InvitationAuthContext;
 }) {
-  const [mode, setMode] = useState<"sign-in" | "sign-up" | "forgot">("sign-in");
-  const [email, setEmail] = useState("");
+  const [mode, setMode] = useState<"sign-in" | "sign-up" | "forgot">(invitation ? "sign-up" : "sign-in");
+  const [email, setEmail] = useState(invitation?.invitedEmail ?? "");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -68,14 +69,15 @@ export function FrontDoorAuthScreen({
         setMessage(invitation ? "Enter your name to join the workspace." : "Enter your name to create an account.");
         return;
       }
+      const authenticatedEmail = invitation?.invitedEmail.trim().toLowerCase() || email.trim().toLowerCase();
       const result = isSignUp
         ? await authAdapter.signUpWithPassword!({
-            email: email.trim(),
+            email: authenticatedEmail,
             password,
             name: name.trim(),
             ...(invitation ? { emailRedirectTo: invitation.emailRedirectTo } : {}),
           })
-        : await authAdapter.signInWithPassword!({ email: email.trim(), password });
+        : await authAdapter.signInWithPassword!({ email: authenticatedEmail, password });
       setMessage(result.message ?? null);
       if (result.user && result.authenticated !== false) {
         if (isSignUp) {
@@ -125,19 +127,20 @@ export function FrontDoorAuthScreen({
               {invitation ? (isSignUp ? "Create your account to join." : "Sign in to join.") : isSignUp ? "Create your Desk." : "Welcome back."}
             </h1>
             {invitation ? (
-              <>
-                <p className="mt-3 text-[13px] font-medium text-muted-foreground/72">You’ve been invited to work with {invitation.preview.artistName}.</p>
-                <div className="mt-5 rounded-[14px] border border-foreground/8 bg-foreground/[0.025] px-3.5 py-3 text-[12px] font-medium text-muted-foreground">
-                  <p className="font-semibold text-foreground">{invitation.preview.teamName}</p>
-                  {invitation.preview.operatingTitle ? <p className="mt-1">Role: {invitation.preview.operatingTitle}</p> : null}
-                  {invitation.preview.responsibilityTags.length ? <p className="mt-1">Responsibilities: {invitation.preview.responsibilityTags.join(", ")}</p> : null}
-                </div>
-              </>
+              <div className="mt-5 border-y border-foreground/8 py-3 text-[12px] font-medium text-muted-foreground">
+                <p className="font-semibold text-foreground">{invitation.preview.teamName}</p>
+                <p className="mt-1">For {invitation.preview.artistName}</p>
+                {invitation.preview.operatingTitle || invitation.preview.responsibilityTags.length ? (
+                  <p className="mt-1">
+                    {[invitation.preview.operatingTitle, ...invitation.preview.responsibilityTags].filter(Boolean).join(" · ")}
+                  </p>
+                ) : null}
+              </div>
             ) : isSignUp ? <p className="mt-3 text-[13px] font-medium text-muted-foreground/72">Start with your artist.</p> : null}
 
             <form className="mt-8 space-y-4" onSubmit={handleSubmit}>
               {isSignUp ? <Field label={invitation ? "Your name" : "Name"} value={name} onChange={setName} autoComplete="name" required disabled={pending} /> : null}
-              <Field label="Email" value={email} onChange={setEmail} type="email" autoComplete="email" required disabled={pending} />
+              <Field label="Email" value={email} onChange={setEmail} type="email" autoComplete="email" required disabled={pending} readOnly={Boolean(invitation)} />
               <Field
                 label="Password"
                 value={password}

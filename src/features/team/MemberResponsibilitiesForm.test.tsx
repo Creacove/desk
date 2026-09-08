@@ -28,6 +28,7 @@ describe("MemberResponsibilitiesForm", () => {
     }
 
     render(<Harness />);
+    expect(screen.queryByText("Choose a role, then adjust the responsibilities if needed.")).not.toBeInTheDocument();
     fireEvent.change(screen.getByRole("combobox", { name: "Role for Mina" }), { target: { value: "DSP / distribution" } });
 
     expect(screen.getByRole("combobox", { name: "Responsibility 1" })).toHaveValue("DSP pitching");

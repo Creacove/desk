@@ -14,10 +14,11 @@ export function buildTeamInvitationEmail(input: TeamInvitationEmailInput) {
   const origin = input.origin.replace(/\/$/, "");
   const joinUrl = `${origin}/join#token=${encodeURIComponent(input.token)}`;
   const title = input.operatingTitle?.trim();
-  const tags = input.responsibilityTags.filter((tag) => tag.trim()).join(", ");
+  const tags = input.responsibilityTags.map((tag) => tag.trim()).filter(Boolean);
+  const roleContext = [title, ...tags].filter(Boolean).join(" · ");
   const expiresOn = formatDate(input.expiresAt);
-  const subject = `You’re invited to ${input.teamName}`;
-  const html = `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#111318"><h1>You’re invited to ${escapeHtml(input.teamName)}</h1><p>You’ve been invited to work with ${escapeHtml(input.artistName)} in the shared OrderSounds workspace.</p>${title ? `<p><strong>Operating title:</strong> ${escapeHtml(title)}</p>` : ""}${tags ? `<p><strong>Responsibilities:</strong> ${escapeHtml(tags)}</p>` : ""}<p>This invitation expires on ${escapeHtml(expiresOn)}.</p><p><a href="${escapeHtml(joinUrl)}">Accept invitation</a></p><p>If the button does not open, copy this link into your browser:</p><p>${escapeHtml(joinUrl)}</p></div>`;
+  const subject = `Join ${input.teamName} on Desk`;
+  const html = `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#111318"><h1>Join ${escapeHtml(input.teamName)}</h1><p>For ${escapeHtml(input.artistName)}</p>${roleContext ? `<p>${escapeHtml(roleContext)}</p>` : ""}<p><a href="${escapeHtml(joinUrl)}" style="display:inline-block;padding:10px 16px;border-radius:6px;background:#7c3aed;color:#fff;text-decoration:none">Join team</a></p><p style="color:#5b606b">This link expires on ${escapeHtml(expiresOn)}.</p><p style="color:#5b606b">If the button does not open, copy this link:</p><p>${escapeHtml(joinUrl)}</p></div>`;
   return {
     to: input.to,
     subject,

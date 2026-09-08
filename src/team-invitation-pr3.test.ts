@@ -50,6 +50,7 @@ describe("PR3 invitation boundary", () => {
     expect(source).toContain('rpc("preview_account_invitation_v1"');
     expect(source).toContain("teamName,");
     expect(source).toContain("artistName,");
+    expect(source).toContain("invitedEmail:");
     expect(source).toContain("operatingTitle:");
     expect(source).toContain("responsibilityTags:");
     expect(source).toContain("expiresAt,");
@@ -57,6 +58,9 @@ describe("PR3 invitation boundary", () => {
     expect(accountTeamSource).toContain('Deno.env.get("PUBLIC_APP_URL") ?? Deno.env.get("APP_ORIGIN")');
     expect(config).toMatch(/\[functions\.account-team\]\s*verify_jwt = true/);
     expect(config).toMatch(/\[functions\.preview-team-invitation\]\s*verify_jwt = false/);
+    const migration = readFileSync(join(process.cwd(), "supabase/migrations/20260908130000_team_invitation_preview_email.sql"), "utf8");
+    expect(migration).toContain("invitedEmail");
+    expect(migration).toContain("invitation_row.email");
   });
 
   it("qualifies the pgcrypto hash in both live invitation functions", () => {

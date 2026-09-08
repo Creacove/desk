@@ -9,6 +9,41 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 afterEach(cleanup);
 
 describe("FrontDoor human identity", () => {
+  it("starts invitees in account creation with a locked email and keeps it locked when switching to sign in", async () => {
+    render(
+      <FrontDoorAuthScreen
+        authAdapter={{ getSession: async () => ({ user: null }) }}
+        onAuthenticated={vi.fn()}
+        invitation={{
+          invitedEmail: "member@example.com",
+          preview: {
+            teamName: "CBA · House 3",
+            artistName: "Godwinton",
+            invitedEmail: "member@example.com",
+            operatingTitle: "Content & Social",
+            responsibilityTags: ["Content planning", "Social publishing"],
+            expiresAt: "2026-09-12T09:00:00.000Z",
+          },
+          emailRedirectTo: "/join#token=token",
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "Create your account to join." })).toBeInTheDocument();
+    expect(screen.getByLabelText("Your name")).toBeInTheDocument();
+    expect(screen.getByLabelText("Email")).toHaveValue("member@example.com");
+    expect(screen.getByLabelText("Email")).toHaveAttribute("readonly");
+    expect(screen.getByText("CBA · House 3")).toBeInTheDocument();
+    expect(screen.getByText("For Godwinton")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(screen.getByRole("heading", { name: "Sign in to join." })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Your name")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Email")).toHaveValue("member@example.com");
+    expect(screen.getByLabelText("Email")).toHaveAttribute("readonly");
+  });
+
   it("requires a display name before submitting a new account", () => {
     const signUpWithPassword = vi.fn();
 

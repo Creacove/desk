@@ -83,8 +83,10 @@ describe("TeamFirstRunScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
 
     await waitFor(() => expect(service.completeFirstRun).toHaveBeenCalled());
-    expect(await screen.findByRole("heading", { name: "Bring in your team" })).toBeInTheDocument();
-    expect(screen.queryByLabelText("Invite email")).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "North Star Records" })).toBeInTheDocument();
+    expect(screen.getByText("Nova Vale · artist workspace")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Invite people" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Email address")).not.toBeInTheDocument();
   });
 
   it("lets the owner use a custom role without displaying owner as a work role", () => {
@@ -117,9 +119,9 @@ describe("TeamFirstRunScreen", () => {
     render(<TeamFirstRunScreen service={service} scope={scope} artistName="Nova Vale" capability={capability} onComplete={onComplete} />);
 
     await completeOwnerSetup(service);
-    fireEvent.click(screen.getByRole("button", { name: "Invite someone" }));
-    fireEvent.change(screen.getByLabelText("Invite email"), { target: { value: "manager@example.com" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send invite" }));
+    fireEvent.click(screen.getByRole("button", { name: "Invite people" }));
+    fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "manager@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send invitation" }));
 
     expect(await screen.findByText("Invite link ready")).toBeInTheDocument();
     expect(screen.queryByText(/email sent/i)).not.toBeInTheDocument();
@@ -127,7 +129,7 @@ describe("TeamFirstRunScreen", () => {
       artistWorkspaceId: scope.artistWorkspaceId,
       email: "manager@example.com",
     }));
-    fireEvent.click(screen.getByRole("button", { name: "Continue to Desk" }));
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
     await waitFor(() => expect(onComplete).toHaveBeenCalled());
   });
 });

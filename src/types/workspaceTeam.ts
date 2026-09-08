@@ -32,6 +32,7 @@ export type TeamResponsibilities = { operatingTitle: string | null; responsibili
 export type TeamInvitationPreview = {
   teamName: string;
   artistName: string;
+  invitedEmail: string;
   operatingTitle: string | null;
   responsibilityTags: string[];
   expiresAt: string;

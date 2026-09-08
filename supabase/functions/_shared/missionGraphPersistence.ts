@@ -147,13 +147,32 @@ async function isWorldModelContinuationRun(db: any, runId: string) {
 }
 
 async function createMission(db: any, input: MissionGraphInput, context: ManagerGraphContext, decision: ManagerMissionGraphDecision) {
+  const existing = await findExistingMission(db, input, context.runId, decision.mission.title);
+  if (existing) return existing;
+
   const { data, error } = await db.from("missions").insert({
     ...missionRow(input, context, decision),
     status: "active",
     priority: 1,
   }).select("id,title,summary").single();
+  if (!error && data) return data;
+  if (!isUniqueViolation(error)) throw error ?? new Error("Manager mission could not be created.");
+  const raced = await findExistingMission(db, input, context.runId, decision.mission.title);
+  if (!raced) throw error;
+  return raced;
+}
+
+async function findExistingMission(db: any, input: MissionGraphInput, runId: string, title: string) {
+  const { data, error } = await db.from("missions")
+    .select("id,title,summary")
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .eq("created_from_run_id", runId)
+    .eq("title", title)
+    .maybeSingle();
   if (error) throw error;
-  return data;
+  return data ?? null;
 }
 
 async function updateMission(db: any, input: MissionGraphInput, missionId: string, decision: ManagerMissionGraphDecision) {
@@ -225,29 +244,40 @@ async function writeMissionPlan(
   } catch {
     // Fail closed to an unassigned task when roster/capability cannot be validated.
   }
-  const { data: existingPlans, error: queryError } = await db
-    .from("mission_plan_versions")
-    .select("id,version")
-    .eq("mission_id", missionId)
-    .order("version", { ascending: false });
-  if (queryError) throw queryError;
+  const existingPlan = await findExistingPlan(db, missionId, context.runId);
+  let existingPlans: Array<{ id: string; version: number }> = [];
+  if (!existingPlan) {
+    const { data, error: queryError } = await db
+      .from("mission_plan_versions")
+      .select("id,version")
+      .eq("mission_id", missionId)
+      .order("version", { ascending: false });
+    if (queryError) throw queryError;
+    existingPlans = data ?? [];
+  }
 
-  const nextVersion = existingPlans?.length ? Number(existingPlans[0].version ?? 0) + 1 : 1;
-  const { data: plan, error: planError } = await db.from("mission_plan_versions").insert({
-    account_id: input.accountId,
-    artist_workspace_id: input.artistWorkspaceId,
-    artist_id: input.artistId,
-    mission_id: missionId,
-    version: nextVersion,
-    status: "active",
-    generated_from_run_id: context.runId,
-    generated_from_action_id: context.actionId ?? null,
-    summary: `${decision.mission.timeline}. ${decision.mission.summary}`,
-  }).select("id").single();
-  if (planError) throw planError;
+  const nextVersion = existingPlan ? Number(existingPlan.version ?? 0) : existingPlans.length ? Number(existingPlans[0].version ?? 0) + 1 : 1;
+  let plan = existingPlan;
+  if (!plan) {
+    const { data, error: planError } = await db.from("mission_plan_versions").insert({
+      account_id: input.accountId,
+      artist_workspace_id: input.artistWorkspaceId,
+      artist_id: input.artistId,
+      mission_id: missionId,
+      version: nextVersion,
+      status: "active",
+      generated_from_run_id: context.runId,
+      generated_from_action_id: context.actionId ?? null,
+      summary: `${decision.mission.timeline}. ${decision.mission.summary}`,
+    }).select("id,version").single();
+    if (!planError && data) plan = data;
+    else if (!isUniqueViolation(planError)) throw planError ?? new Error("Manager mission plan could not be created.");
+    else plan = await findExistingPlan(db, missionId, context.runId);
+    if (!plan) throw planError ?? new Error("Manager mission plan could not be recovered.");
+  }
 
-  if (nextVersion > 1 && existingPlans?.length) {
-    const supersededPlanIds = existingPlans.map((item: any) => item.id);
+  if (!existingPlan && nextVersion > 1 && existingPlans.length) {
+    const supersededPlanIds = existingPlans.map((item) => item.id);
     const { error: planSupersedeError } = await db.from("mission_plan_versions").update({
       status: "superseded",
       superseded_at: new Date().toISOString(),
@@ -273,41 +303,56 @@ async function writeMissionPlan(
     const hasBlockingTask = decision.tasks.some((task) =>
       task.primaryCheckpointKey === checkpoint.key && task.workMode !== "manager_work"
     );
-    const { data, error } = await db.from("checkpoints").insert({
-      account_id: input.accountId,
-      artist_workspace_id: input.artistWorkspaceId,
-      artist_id: input.artistId,
-      mission_id: missionId,
-      mission_plan_version_id: plan.id,
-      title: checkpoint.title,
-      status: hasBlockingTask ? "waiting" : "watching_signal",
-      question: checkpoint.question,
-      reason_for_checkpoint: checkpoint.question,
-      watched_signals: checkpoint.sourceRefs,
-      decision_rule: checkpoint.decisionRule,
-      recommendation: checkpoint.managerRead,
-      next_action: checkpoint.nextAction,
-      required_evidence: checkpoint.requiredEvidence,
-      missing_evidence: checkpoint.missingEvidence,
-      custom_reason: `Manager-authored checkpoint grounded in packet refs: ${checkpoint.sourceRefs.join(", ")}`,
-      created_from_run_id: context.runId,
-      created_from_action_id: context.actionId ?? null,
-    }).select("id").single();
-    if (error) throw error;
-    checkpointIds.set(checkpoint.key, data.id);
+    const existingCheckpoint = await findExistingCheckpoint(db, plan.id, context.runId, checkpoint.title);
+    let checkpointRow = existingCheckpoint;
+    if (!checkpointRow) {
+      const { data, error } = await db.from("checkpoints").insert({
+        account_id: input.accountId,
+        artist_workspace_id: input.artistWorkspaceId,
+        artist_id: input.artistId,
+        mission_id: missionId,
+        mission_plan_version_id: plan.id,
+        title: checkpoint.title,
+        status: hasBlockingTask ? "waiting" : "watching_signal",
+        question: checkpoint.question,
+        reason_for_checkpoint: checkpoint.question,
+        watched_signals: checkpoint.sourceRefs,
+        decision_rule: checkpoint.decisionRule,
+        recommendation: checkpoint.managerRead,
+        next_action: checkpoint.nextAction,
+        required_evidence: checkpoint.requiredEvidence,
+        missing_evidence: checkpoint.missingEvidence,
+        custom_reason: `Manager-authored checkpoint grounded in packet refs: ${checkpoint.sourceRefs.join(", ")}`,
+        created_from_run_id: context.runId,
+        created_from_action_id: context.actionId ?? null,
+      }).select("id").single();
+      if (!error && data) checkpointRow = data;
+      else if (!isUniqueViolation(error)) throw error ?? new Error("Manager checkpoint could not be created.");
+      else checkpointRow = await findExistingCheckpoint(db, plan.id, context.runId, checkpoint.title);
+      if (!checkpointRow) throw error ?? new Error("Manager checkpoint could not be recovered.");
+    }
+    checkpointIds.set(checkpoint.key, checkpointRow.id);
 
-    const { error: linkError } = await db.from("mission_plan_checkpoints").insert({
-      account_id: input.accountId,
-      artist_workspace_id: input.artistWorkspaceId,
-      artist_id: input.artistId,
-      mission_plan_version_id: plan.id,
-      mission_id: missionId,
-      checkpoint_id: data.id,
-      order_index: index + 1,
-      phase_label: checkpoint.title,
-      unlock_rule: checkpoint.decisionRule,
-    });
-    if (linkError) throw linkError;
+    const { data: existingLink, error: linkQueryError } = await db.from("mission_plan_checkpoints")
+      .select("id")
+      .eq("mission_plan_version_id", plan.id)
+      .eq("checkpoint_id", checkpointRow.id)
+      .maybeSingle();
+    if (linkQueryError) throw linkQueryError;
+    if (!existingLink) {
+      const { error: linkError } = await db.from("mission_plan_checkpoints").insert({
+        account_id: input.accountId,
+        artist_workspace_id: input.artistWorkspaceId,
+        artist_id: input.artistId,
+        mission_plan_version_id: plan.id,
+        mission_id: missionId,
+        checkpoint_id: checkpointRow.id,
+        order_index: index + 1,
+        phase_label: checkpoint.title,
+        unlock_rule: checkpoint.decisionRule,
+      });
+      if (linkError && !isUniqueViolation(linkError)) throw linkError;
+    }
   }
 
   for (const task of decision.tasks) {
@@ -320,48 +365,55 @@ async function writeMissionPlan(
     const assignment = normalizeTaskAssignment(task, { roster, teamEnabled }, task.workMode);
     const checkpointId = checkpointIds.get(task.primaryCheckpointKey);
     if (!checkpointId) throw new Error(`Manager mission graph task references missing checkpoint: ${task.primaryCheckpointKey}`);
-    const { data: taskRow, error } = await db.from("tasks").insert({
-      account_id: input.accountId,
-      artist_workspace_id: input.artistWorkspaceId,
-      artist_id: input.artistId,
-      scope: "mission",
-      mission_id: missionId,
-      mission_plan_version_id: plan.id,
-      primary_checkpoint_id: checkpointId,
-      title: task.title,
-      schedule_key: task.scheduleKey || null,
-      owner_role: task.ownerRole || "Manager",
-      // The row is staged as Manager-owned until task_steps have been written
-      // in this HTTP workflow. The intent becomes the generated task contract
-      // in activateHumanTask below; a crash cannot expose half-written human
-      // work as executable Today work.
-      work_mode: "manager_work",
-      task_intent: "manager_work",
-      readiness: "ready",
-      review_target_id: null,
-      review_target_type: null,
-      review_target_version_id: null,
-      review_target_status: null,
-      assignee_user_id: null,
-      assignment_reason: null,
-      assignment_source: null,
-      priority: 1,
-      status: "proposed",
-      approval_state: "not_required",
-      purpose: task.purpose,
-      evidence_needed: task.evidenceNeeded,
-      completion_expectation: task.completionExpectation,
-      completion_mode: task.completionMode,
-      deliverable_title: task.deliverableTitle || null,
-      deliverable_requirements: task.deliverableRequirements,
-      manager_responsibility: task.managerResponsibility || null,
-      user_responsibility: task.userResponsibility || null,
-      risk_if_late: task.riskIfLate,
-      deadline: normalizedDeadline(task.deadline),
-      created_from_run_id: context.runId,
-      created_from_action_id: context.actionId ?? null,
-    }).select("id").single();
-    if (error) throw error;
+    const existingTask = await findExistingTask(db, plan.id, context.runId, task.title);
+    let taskRow = existingTask;
+    if (!taskRow) {
+      const { data, error } = await db.from("tasks").insert({
+        account_id: input.accountId,
+        artist_workspace_id: input.artistWorkspaceId,
+        artist_id: input.artistId,
+        scope: "mission",
+        mission_id: missionId,
+        mission_plan_version_id: plan.id,
+        primary_checkpoint_id: checkpointId,
+        title: task.title,
+        schedule_key: task.scheduleKey || null,
+        owner_role: task.ownerRole || "Manager",
+        // The row is staged as Manager-owned until task_steps have been written
+        // in this HTTP workflow. The intent becomes the generated task contract
+        // in activateHumanTask below; a crash cannot expose half-written human
+        // work as executable Today work.
+        work_mode: "manager_work",
+        task_intent: "manager_work",
+        readiness: "ready",
+        review_target_id: null,
+        review_target_type: null,
+        review_target_version_id: null,
+        review_target_status: null,
+        assignee_user_id: null,
+        assignment_reason: null,
+        assignment_source: null,
+        priority: 1,
+        status: "proposed",
+        approval_state: "not_required",
+        purpose: task.purpose,
+        evidence_needed: task.evidenceNeeded,
+        completion_expectation: task.completionExpectation,
+        completion_mode: task.completionMode,
+        deliverable_title: task.deliverableTitle || null,
+        deliverable_requirements: task.deliverableRequirements,
+        manager_responsibility: task.managerResponsibility || null,
+        user_responsibility: task.userResponsibility || null,
+        risk_if_late: task.riskIfLate,
+        deadline: normalizedDeadline(task.deadline),
+        created_from_run_id: context.runId,
+        created_from_action_id: context.actionId ?? null,
+      }).select("id").single();
+      if (!error && data) taskRow = data;
+      else if (!isUniqueViolation(error)) throw error ?? new Error("Manager task could not be created.");
+      else taskRow = await findExistingTask(db, plan.id, context.runId, task.title);
+      if (!taskRow) throw error ?? new Error("Manager task could not be recovered.");
+    }
     taskWork.push({
       type: "task",
       id: taskRow.id,
@@ -372,40 +424,94 @@ async function writeMissionPlan(
     });
 
     if (task.steps.length) {
-      const { error: stepError } = await db.from("task_steps").insert(task.steps.map((body, index) => ({
-        account_id: input.accountId,
-        artist_workspace_id: input.artistWorkspaceId,
-        artist_id: input.artistId,
-        task_id: taskRow.id,
-        order_index: index + 1,
-        body,
-      })));
-      if (stepError) throw stepError;
+      await ensureTaskSteps(db, input, taskRow.id, task.steps);
     }
 
     await activateHumanTask(db, taskRow.id, task.workMode, task.intent, assignment);
   }
 
   for (const permission of decision.permissionRequests) {
-    const { error } = await db.from("permission_requests").insert({
-      account_id: input.accountId,
-      artist_workspace_id: input.artistWorkspaceId,
-      artist_id: input.artistId,
-      mission_id: missionId,
-      request_type: permission.requestType,
-      title: permission.title,
-      body: permission.body,
-      risk: permission.risk,
-      status: "pending",
-      created_from_run_id: context.runId,
-      created_from_action_id: context.actionId ?? null,
-    });
-    if (error) throw error;
+    const { data: existingPermission, error: permissionQueryError } = await db.from("permission_requests")
+      .select("id")
+      .eq("mission_id", missionId)
+      .eq("created_from_run_id", context.runId)
+      .eq("title", permission.title)
+      .maybeSingle();
+    if (permissionQueryError) throw permissionQueryError;
+    if (!existingPermission) {
+      const { error } = await db.from("permission_requests").insert({
+        account_id: input.accountId,
+        artist_workspace_id: input.artistWorkspaceId,
+        artist_id: input.artistId,
+        mission_id: missionId,
+        request_type: permission.requestType,
+        title: permission.title,
+        body: permission.body,
+        risk: permission.risk,
+        status: "pending",
+        created_from_run_id: context.runId,
+        created_from_action_id: context.actionId ?? null,
+      });
+      if (error && !isUniqueViolation(error)) throw error;
+    }
   }
 
   const { error: missionError } = await db.from("missions").update({ active_plan_version_id: plan.id }).eq("id", missionId);
   if (missionError) throw missionError;
   return taskWork;
+}
+
+async function findExistingPlan(db: any, missionId: string, runId: string) {
+  const { data, error } = await db.from("mission_plan_versions")
+    .select("id,version")
+    .eq("mission_id", missionId)
+    .eq("generated_from_run_id", runId)
+    .maybeSingle();
+  if (error) throw error;
+  return data ?? null;
+}
+
+async function findExistingCheckpoint(db: any, planId: string, runId: string, title: string) {
+  const { data, error } = await db.from("checkpoints")
+    .select("id")
+    .eq("mission_plan_version_id", planId)
+    .eq("created_from_run_id", runId)
+    .eq("title", title)
+    .maybeSingle();
+  if (error) throw error;
+  return data ?? null;
+}
+
+async function findExistingTask(db: any, planId: string, runId: string, title: string) {
+  const { data, error } = await db.from("tasks")
+    .select("id")
+    .eq("mission_plan_version_id", planId)
+    .eq("created_from_run_id", runId)
+    .eq("title", title)
+    .maybeSingle();
+  if (error) throw error;
+  return data ?? null;
+}
+
+async function ensureTaskSteps(db: any, input: MissionGraphInput, taskId: string, steps: string[]) {
+  const { data: existing, error: queryError } = await db.from("task_steps")
+    .select("order_index")
+    .eq("task_id", taskId);
+  if (queryError) throw queryError;
+  const existingIndexes = new Set<number>((existing ?? []).map((step: { order_index?: number | null }) => Number(step.order_index)));
+  const missingSteps = steps
+    .map((body, index) => ({
+      account_id: input.accountId,
+      artist_workspace_id: input.artistWorkspaceId,
+      artist_id: input.artistId,
+      task_id: taskId,
+      order_index: index + 1,
+      body,
+    }))
+    .filter((step) => !existingIndexes.has(step.order_index));
+  if (!missingSteps.length) return;
+  const { error } = await db.from("task_steps").insert(missingSteps);
+  if (error && !isUniqueViolation(error)) throw error;
 }
 
 function normalizedDeadline(value: unknown) {
@@ -423,8 +529,9 @@ async function writeOperatingEvent(db: any, input: MissionGraphInput, context: M
     source_type: context.sourceType,
     manager_synthesis_run_id: context.runId,
     ...event,
+    dedupe_key: `${context.runId}:${String(event.event_type ?? "manager_graph")}:${String(event.target_type ?? "target")}:${String(event.target_id ?? "")}`,
   });
-  if (error) throw error;
+  if (error && !isUniqueViolation(error)) throw error;
 }
 
 function unique(values: string[]) {
@@ -487,6 +594,12 @@ function taskContractErrorMessage(error: unknown) {
     return error.message;
   }
   return String(error ?? "Unknown task contract error");
+}
+
+function isUniqueViolation(error: unknown) {
+  if (!error) return false;
+  if (typeof error === "object" && "code" in error && (error as { code?: unknown }).code === "23505") return true;
+  return /duplicate key|unique constraint/i.test(String(error));
 }
 
 async function activateHumanTask(
