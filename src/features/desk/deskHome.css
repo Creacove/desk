@@ -38,7 +38,7 @@
   border: 1px solid hsl(var(--surface-line));
   border-radius: 1rem;
   background: hsl(var(--surface-panel));
-  box-shadow: inset 2px 0 0 hsl(var(--brand-accent) / 0.52), 0 1rem 2.5rem hsl(var(--background) / 0.08);
+  box-shadow: 0 0.75rem 2rem hsl(var(--foreground) / 0.035);
 }
 
 .home-today-row {
@@ -56,7 +56,6 @@
 
 .home-today-row-primary {
   min-height: 6rem;
-  background: hsl(var(--brand-accent) / 0.035);
 }
 
 .home-today-row:hover {
@@ -122,6 +121,110 @@
   min-width: 0;
   border-bottom: 1px solid hsl(var(--foreground) / 0.08);
   padding: 1rem 1.25rem !important;
+}
+
+.home-today-review {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 1.25rem 2rem;
+  min-width: 0;
+  padding: 1.125rem 1.5rem 1.25rem;
+  border-bottom: 1px solid hsl(var(--foreground) / 0.08);
+  background: hsl(var(--foreground) / 0.014);
+}
+
+.home-today-review-copy {
+  min-width: 0;
+}
+
+.home-today-review-title {
+  font-family: var(--font-ui);
+  font-size: 0.8125rem;
+  font-weight: 650;
+  line-height: 1.45;
+  color: hsl(var(--foreground) / 0.9);
+}
+
+.home-today-review-target {
+  margin-top: 0.2rem;
+  font-family: var(--font-ui);
+  font-size: 0.6875rem;
+  font-weight: 550;
+  color: hsl(var(--muted-foreground) / 0.78);
+}
+
+.home-today-review-details {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 0.65rem;
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.5;
+  color: hsl(var(--foreground) / 0.7);
+}
+
+.home-today-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.home-today-review-approve,
+.home-today-review-reject {
+  min-height: 2.375rem;
+  border-radius: 0.625rem;
+  padding: 0.625rem 0.875rem;
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  font-weight: 650;
+  line-height: 1;
+  transition: background-color var(--motion-standard), border-color var(--motion-standard), color var(--motion-standard);
+}
+
+.home-today-review-approve {
+  border: 1px solid hsl(var(--foreground));
+  background: hsl(var(--foreground));
+  color: hsl(var(--background));
+}
+
+.home-today-review-approve:hover {
+  background: hsl(var(--foreground) / 0.88);
+  border-color: transparent;
+}
+
+.home-today-review-reject {
+  border: 1px solid hsl(var(--foreground) / 0.12);
+  background: transparent;
+  color: hsl(var(--foreground) / 0.8);
+}
+
+.home-today-review-reject:hover {
+  border-color: hsl(var(--foreground) / 0.22);
+  background: hsl(var(--foreground) / 0.035);
+  color: hsl(var(--foreground));
+}
+
+.home-today-review-approve:focus-visible,
+.home-today-review-reject:focus-visible {
+  outline: 2px solid hsl(var(--brand-accent) / 0.28);
+  outline-offset: 2px;
+}
+
+.home-today-review-approve:disabled,
+.home-today-review-reject:disabled {
+  opacity: 0.5;
+}
+
+.home-today-review-error {
+  grid-column: 1 / -1;
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  font-weight: 550;
+  color: hsl(var(--destructive));
 }
 
 .home-today-more {
@@ -261,6 +364,7 @@
 .app-theme-dark .home-today-surface {
   border-color: hsl(var(--foreground) / 0.1);
   background: hsl(var(--surface-panel));
+  box-shadow: 0 0.75rem 2rem hsl(var(--background) / 0.18);
 }
 
 @media (max-width: 767px) {
@@ -275,7 +379,7 @@
 
   .home-today-surface {
     margin-top: 0.875rem;
-    box-shadow: inset 2px 0 0 hsl(var(--brand-accent) / 0.42);
+    box-shadow: none;
   }
 
   .home-today-row {
@@ -296,6 +400,17 @@
   .home-today-more-list .home-today-row {
     padding-top: 0.875rem;
     padding-bottom: 0.875rem;
+  }
+
+  .home-today-review {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 1rem;
+    padding: 1rem;
+  }
+
+  .home-today-review-actions {
+    justify-content: flex-start;
   }
 
   .home-today-title {

@@ -158,12 +158,14 @@ function ActivityButton({ count, onOpen }: { count: number; onOpen: () => void }
       leadingIcon={<Bell className="h-4 w-4" aria-hidden="true" />}
       className="relative min-h-11"
     >
-      <span>Activity</span>
-      {count ? (
-        <span className="inline-flex h-[19px] min-w-[19px] items-center justify-center rounded-full bg-brand-accent px-1.5 text-[11px] font-semibold leading-none text-white">
-          {count > 9 ? "9+" : count}
-        </span>
-      ) : null}
+      <span data-testid="home-activity-label" className="inline-flex items-center gap-2">
+        <span>Activity</span>
+        {count ? (
+          <span className="inline-flex h-[19px] min-w-[19px] items-center justify-center rounded-full bg-brand-accent px-1.5 text-[11px] font-semibold leading-none text-white">
+            {count > 9 ? "9+" : count}
+          </span>
+        ) : null}
+      </span>
     </Button>
   );
 }

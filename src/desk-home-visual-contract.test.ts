@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const css = readFileSync(join(process.cwd(), "src/features/desk/deskHome.css"), "utf8");
+const today = readFileSync(join(process.cwd(), "src/features/desk/TodayRuntimeExecution.tsx"), "utf8");
 
 describe("Desk Home visual contract", () => {
   it("uses the shared theme tokens and a focused Today surface", () => {
@@ -13,6 +14,16 @@ describe("Desk Home visual contract", () => {
     expect(css).toContain("hsl(var(--brand-accent) /");
     expect(css).not.toMatch(/\.home-today-list\s*\{[^}]*grid-template-columns:\s*repeat\(2,/s);
     expect(css).toMatch(/\.home-today-row\s*\{[^}]*padding:/s);
+  });
+
+  it("uses a neutral shell and an integrated approval tray", () => {
+    const surface = css.match(/\.home-today-surface\s*\{([^}]*)\}/s)?.[1] ?? "";
+
+    expect(surface).not.toContain("inset");
+    expect(surface).not.toContain("brand-accent");
+    expect(css).toContain(".home-today-review");
+    expect(today).toContain('className="home-today-review"');
+    expect(today).not.toContain("home-today-expanded mb-4 ml-10");
   });
 
   it("defines mobile, narrow mobile, dark theme, and reduced-motion behavior", () => {

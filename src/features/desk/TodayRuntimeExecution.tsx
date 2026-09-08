@@ -377,28 +377,25 @@ function TodayPermissionRow({
       </button>
 
       {open ? (
-        <div className="home-today-expanded mb-4 ml-10 max-w-[52rem] rounded-[14px] border border-foreground/10 bg-foreground/[0.018] p-4">
+        <div className="home-today-review">
           {detail && effect ? (
             <>
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="text-[13px] font-semibold text-foreground">{effect.actionLabel}</p>
-                  {effect.targetLabel ? <p className="mt-1 text-[11px] font-medium text-muted-foreground">{effect.targetLabel}</p> : null}
-                </div>
+              <div className="home-today-review-copy">
+                <p className="home-today-review-title">{effect.actionLabel}</p>
+                {effect.targetLabel ? <p className="home-today-review-target">{effect.targetLabel}</p> : null}
+                {effect.details.length ? (
+                  <ul className="home-today-review-details">
+                    {effect.details.map((line) => <li key={line}>{line}</li>)}
+                  </ul>
+                ) : null}
               </div>
 
-              {effect.details.length ? (
-                <ul className="mt-3 space-y-1.5 text-[12px] font-medium leading-relaxed text-foreground/80">
-                  {effect.details.map((line) => <li key={line}>{line}</li>)}
-                </ul>
-              ) : null}
-
-              <div className="mt-4 flex flex-wrap items-center gap-2">
+              <div className="home-today-review-actions">
                 <button
                   type="button"
                   onClick={() => void decide("approve")}
                   disabled={Boolean(pendingDecision)}
-                  className="rounded-[10px] bg-foreground px-3.5 py-2 text-[12px] font-semibold text-background disabled:opacity-50"
+                  className="home-today-review-approve"
                 >
                   {pendingDecision === "approve" ? "Approving…" : effect.executable ? "Approve & run" : "Approve draft"}
                 </button>
@@ -406,14 +403,14 @@ function TodayPermissionRow({
                   type="button"
                   onClick={() => void decide("reject")}
                   disabled={Boolean(pendingDecision)}
-                  className="rounded-[10px] border border-foreground/12 px-3.5 py-2 text-[12px] font-semibold text-foreground disabled:opacity-50"
+                  className="home-today-review-reject"
                 >
                   {pendingDecision === "reject" ? "Rejecting…" : "Reject"}
                 </button>
               </div>
             </>
           ) : null}
-          {error ? <p role="alert" className="text-[12px] font-medium text-destructive">{error}</p> : null}
+          {error ? <p role="alert" className="home-today-review-error">{error}</p> : null}
         </div>
       ) : null}
     </div>

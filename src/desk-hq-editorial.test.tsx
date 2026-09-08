@@ -128,6 +128,13 @@ describe("Home premium briefing", () => {
     expect(within(today).queryByTestId("desk-today-index")).not.toBeInTheDocument();
   });
 
+  it("keeps the Activity count visually separate from its label", () => {
+    renderHome();
+
+    const activity = screen.getByRole("button", { name: /Open Activity Center/ });
+    expect(within(activity).getByTestId("home-activity-label")).toHaveClass("gap-2");
+  });
+
   it("moves the existing urgent work into Today and preserves its destinations", () => {
     const onNavigate = vi.fn();
     const onDrawer = vi.fn();
