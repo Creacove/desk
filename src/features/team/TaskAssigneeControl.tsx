@@ -1,5 +1,5 @@
-import { UserRound } from "lucide-react";
-import { useState } from "react";
+import { Check, ChevronDown, UserRound } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import type { WorkspaceRoster } from "../../types/workspaceTeam";
 
@@ -14,24 +14,50 @@ export function TaskAssigneeControl({
   assigneeUserId,
   viewerUserId,
   assignmentVersion = 0,
+  workMode,
   onReassign,
 }: TaskAssignmentContext & {
   assigneeUserId?: string | null;
   assignmentVersion?: number;
+  workMode?: string;
 }) {
   const [pending, setPending] = useState(false);
+  const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const viewer = roster.members.find((member) => member.userId === viewerUserId);
-  const isOwner = viewer?.accessRole === "owner";
-  const assignee = assigneeUserId ? roster.members.find((member) => member.userId === assigneeUserId) : undefined;
-  const currentValue = assignee?.userId ?? "";
+  const rootRef = useRef<HTMLDivElement>(null);
+  const members = roster.members.filter((member) => member.accessRole === "owner" || member.accessRole === "member");
+  const viewer = members.find((member) => member.userId === viewerUserId);
+  const assignee = assigneeUserId ? members.find((member) => member.userId === assigneeUserId) : undefined;
+  const canEdit = viewer?.accessRole === "owner" && Boolean(onReassign);
 
-  async function changeAssignee(value: string) {
-    if (!onReassign || !isOwner || pending) return;
+  useEffect(() => {
+    if (!open) return;
+    function closeOnOutside(event: PointerEvent) {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false);
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("pointerdown", closeOnOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  // A workspace with one active person has no meaningful assignment choice.
+  // The server already routes work to that person, so keeping this surface
+  // hidden prevents the task drawer from asking an obvious question.
+  if (members.length <= 1 || workMode === "manager_work") return null;
+
+  async function changeAssignee(value: string | null) {
+    if (!onReassign || !canEdit || pending) return;
     setPending(true);
     setError(null);
     try {
-      await onReassign(value || null, assignmentVersion);
+      await onReassign(value, assignmentVersion);
+      setOpen(false);
     } catch (reassignError) {
       setError(safeAssignmentError(reassignError));
     } finally {
@@ -39,32 +65,92 @@ export function TaskAssigneeControl({
     }
   }
 
+  const label = assignee?.displayName ?? "Needs owner";
+  const triggerLabel = assignee ? `Assigned to ${assignee.displayName}. Change assignee` : "Assign task";
+
   return (
-    <div className="mt-5 border-t border-foreground/8 pt-4" data-testid="task-assignee-control">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-2.5">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-foreground/[0.05] text-muted-foreground"><UserRound className="h-4 w-4" aria-hidden="true" /></span>
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground/72">Assignee</p>
-            <p className="mt-1 text-[13px] font-semibold text-foreground">{assignee ? assignee.displayName : "Needs an owner"}</p>
-            {assignee?.operatingTitle ? <p className="mt-0.5 text-[12px] font-medium text-muted-foreground">{assignee.operatingTitle}</p> : null}
-            {assignee && assignee.userId === viewerUserId ? <p className="mt-1 text-[11px] font-semibold text-brand-accent">Assigned to you</p> : null}
-          </div>
+    <div ref={rootRef} className="relative mt-3" data-testid="task-assignee-control">
+      {canEdit ? (
+        <button
+          type="button"
+          aria-label={triggerLabel}
+          aria-expanded={open}
+          aria-haspopup="menu"
+          disabled={pending}
+          onClick={() => setOpen((value) => !value)}
+          className="inline-flex min-h-8 max-w-full items-center gap-2 rounded-full border border-foreground/10 bg-foreground/[0.035] px-2.5 pr-2 text-[12px] font-semibold text-foreground transition-colors hover:border-foreground/16 hover:bg-foreground/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/28 disabled:pointer-events-none disabled:opacity-50"
+        >
+          <AssigneeAvatar name={assignee?.displayName} />
+          <span className="truncate">{label}</span>
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+        </button>
+      ) : (
+        <span
+          aria-label={assignee ? `Assigned to ${assignee.displayName}` : "Needs an owner"}
+          className="inline-flex min-h-8 max-w-full items-center gap-2 rounded-full bg-foreground/[0.035] px-2.5 text-[12px] font-semibold text-muted-foreground"
+        >
+          <AssigneeAvatar name={assignee?.displayName} />
+          <span className="truncate">{label}</span>
+        </span>
+      )}
+
+      {open && canEdit ? (
+        <div role="menu" aria-label="Team members" className="absolute left-0 top-full z-30 mt-2 min-w-[15rem] max-w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-[14px] border border-foreground/10 bg-background p-1.5 shadow-[0_18px_45px_hsl(var(--foreground)/0.16)]">
+          <p className="px-2.5 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/68">Assign to</p>
+          <button
+            type="button"
+            disabled={pending}
+            aria-label="Leave unassigned"
+            onClick={() => void changeAssignee(null)}
+            className="flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left text-[12px] font-semibold text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/28 disabled:pointer-events-none disabled:opacity-50"
+          >
+            <AssigneeAvatar />
+            <span className="min-w-0 flex-1 truncate">Needs owner</span>
+            {!assignee ? <Check className="h-3.5 w-3.5 shrink-0 text-brand-accent" aria-hidden="true" /> : null}
+          </button>
+          {members.map((member) => (
+            <button
+              key={member.userId}
+              type="button"
+              disabled={pending}
+              aria-label={`Assign to ${member.displayName}`}
+              onClick={() => void changeAssignee(member.userId)}
+              className="flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left transition-colors hover:bg-foreground/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/28 disabled:pointer-events-none disabled:opacity-50"
+            >
+              <AssigneeAvatar name={member.displayName} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[12px] font-semibold text-foreground">{member.displayName}</span>
+                <span className="block truncate text-[11px] font-medium text-muted-foreground">
+                  {member.operatingTitle || member.responsibilityTags.slice(0, 2).join(" · ") || "Team member"}
+                </span>
+              </span>
+              {assignee?.userId === member.userId ? <Check className="h-3.5 w-3.5 shrink-0 text-brand-accent" aria-hidden="true" /> : null}
+            </button>
+          ))}
         </div>
-        {isOwner && onReassign ? (
-          <label className="grid min-w-[12rem] gap-1.5 text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/72">
-            <span className="sr-only">Assign task</span>
-            <select aria-label="Assign task" value={currentValue} disabled={pending} onChange={(event) => void changeAssignee(event.target.value)} className="min-h-10 rounded-[10px] border border-foreground/10 bg-background px-3 text-left text-[12px] font-semibold normal-case tracking-normal text-foreground outline-none focus:border-brand-accent/45 focus:ring-2 focus:ring-brand-accent/8">
-              <option value="">Needs an owner</option>
-              {roster.members.map((member) => <option key={member.userId} value={member.userId}>{member.displayName}{member.accessRole === "owner" ? " · Owner" : ""}</option>)}
-            </select>
-          </label>
-        ) : null}
-      </div>
-      {error ? <p role="alert" className="mt-2 text-[11px] font-medium text-destructive">{error}</p> : null}
-      {pending ? <p className="mt-2 text-[11px] font-medium text-muted-foreground">Saving assignment…</p> : null}
+      ) : null}
+
+      {error ? <p role="alert" className="mt-1.5 text-[11px] font-medium text-destructive">{error}</p> : null}
     </div>
   );
+}
+
+function AssigneeAvatar({ name }: { name?: string }) {
+  return (
+    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-foreground/[0.08] text-[9px] font-bold uppercase text-muted-foreground">
+      {name ? initials(name) : <UserRound className="h-3 w-3" aria-hidden="true" />}
+    </span>
+  );
+}
+
+function initials(name: string) {
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0] ?? "")
+    .join("")
+    .toUpperCase() || "?";
 }
 
 function safeAssignmentError(error: unknown) {

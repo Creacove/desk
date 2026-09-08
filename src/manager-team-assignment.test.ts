@@ -16,12 +16,20 @@ describe("validated human task routing", () => {
     for (const proposal of [{ assigneeUserId: "outside" }, { assigneeUserId: null }, {}]) {
       expect(normalizeTaskAssignment(proposal, context, "collaborative").assigneeUserId).toBeNull();
     }
-    expect(normalizeTaskAssignment({ assigneeUserId: "member" }, { ...context, roster: { ...roster, members: [owner] } }, "collaborative").assigneeUserId).toBeNull();
+    expect(normalizeTaskAssignment({ assigneeUserId: "member" }, { ...context, roster: { ...roster, members: [owner] } }, "collaborative").assigneeUserId).toBe("owner");
   });
   it("preserves only the single-owner legacy fallback", () => {
     const solo = { teamEnabled: false, roster: { ...roster, members: [owner] } };
     expect(normalizeTaskAssignment({}, solo, "artist_action")).toEqual({ assigneeUserId: "owner", assignmentReason: null, assignmentSource: "solo_fallback" });
     expect(normalizeTaskAssignment({}, { ...context, teamEnabled: false }, "artist_action").assigneeUserId).toBeNull();
+  });
+  it("falls back to the only active owner in a one-person team workspace", () => {
+    const onePersonTeam = { teamEnabled: true, roster: { ...roster, members: [owner] } };
+    expect(normalizeTaskAssignment({}, onePersonTeam, "artist_action")).toEqual({
+      assigneeUserId: "owner",
+      assignmentReason: null,
+      assignmentSource: "solo_fallback",
+    });
   });
   it("cannot invent an assignee during roster failure", () => {
     expect(normalizeTaskAssignment({ assigneeUserId: "member" }, { roster: null, teamEnabled: false }, "artist_action").assigneeUserId).toBeNull();

@@ -164,6 +164,7 @@ export function TaskSheet({
               {...teamAssignment}
               assigneeUserId={task.assigneeUserId}
               assignmentVersion={task.assignmentVersion}
+              workMode={workMode}
             />
           ) : null}
 

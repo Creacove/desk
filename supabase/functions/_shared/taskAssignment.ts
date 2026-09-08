@@ -13,10 +13,11 @@ const unassigned = (): ValidatedTaskAssignment => ({ assigneeUserId: null, assig
 export function normalizeTaskAssignment(proposal: TaskAssignmentProposal, context: TaskAssignmentContext, workMode: string): ValidatedTaskAssignment {
   if (workMode === "manager_work" || !context.roster) return unassigned();
   const members = context.roster.members.filter((member) => member.accessRole === "owner" || member.accessRole === "member");
+  if (members.length === 1) {
+    return { assigneeUserId: members[0].userId, assignmentReason: null, assignmentSource: "solo_fallback" };
+  }
   if (!context.teamEnabled) {
-    return members.length === 1 && members[0].accessRole === "owner"
-      ? { assigneeUserId: members[0].userId, assignmentReason: null, assignmentSource: "solo_fallback" }
-      : unassigned();
+    return unassigned();
   }
   const candidate = typeof proposal.assigneeUserId === "string" ? proposal.assigneeUserId.trim() : "";
   if (!candidate || !members.some((member) => member.userId === candidate)) return unassigned();

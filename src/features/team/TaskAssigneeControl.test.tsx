@@ -39,14 +39,15 @@ const roster: WorkspaceRoster = {
 describe("TaskAssigneeControl", () => {
   afterEach(cleanup);
 
-  it("shows an assignee name and responsibility title", () => {
+  it("shows a compact assignee chip", () => {
     render(<TaskAssigneeControl roster={roster} assigneeUserId={sarah.userId} viewerUserId={sarah.userId} assignmentVersion={2} />);
 
     expect(screen.getByText("Sarah")).toBeInTheDocument();
-    expect(screen.getByText("Distribution")).toBeInTheDocument();
+    expect(screen.queryByText("ASSIGNEE")).not.toBeInTheDocument();
+    expect(screen.queryByText("Assigned to you")).not.toBeInTheDocument();
   });
 
-  it("lets the owner reassign with the expected assignment version", async () => {
+  it("lets the owner reassign from the compact picker", async () => {
     const onReassign = vi.fn().mockResolvedValue(undefined);
     render(
       <TaskAssigneeControl
@@ -58,7 +59,8 @@ describe("TaskAssigneeControl", () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText("Assign task"), { target: { value: favour.userId } });
+    fireEvent.click(screen.getByRole("button", { name: /assigned to sarah/i }));
+    fireEvent.click(screen.getByRole("button", { name: /assign to favour/i }));
     await waitFor(() => expect(onReassign).toHaveBeenCalledWith(favour.userId, 2));
   });
 
@@ -73,7 +75,36 @@ describe("TaskAssigneeControl", () => {
       />,
     );
 
-    expect(screen.queryByLabelText("Assign task")).not.toBeInTheDocument();
-    expect(screen.getByText("Assigned to you")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /change assignee/i })).not.toBeInTheDocument();
+    expect(screen.getByText("Sarah")).toBeInTheDocument();
+  });
+
+  it("hides assignment entirely when the workspace has one active person", () => {
+    render(
+      <TaskAssigneeControl
+        roster={{ ...roster, members: [owner] }}
+        assigneeUserId={owner.userId}
+        viewerUserId={owner.userId}
+        assignmentVersion={1}
+        onReassign={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByTestId("task-assignee-control")).not.toBeInTheDocument();
+  });
+
+  it("hides assignment for Manager-owned work", () => {
+    render(
+      <TaskAssigneeControl
+        roster={roster}
+        assigneeUserId={null}
+        viewerUserId={owner.userId}
+        assignmentVersion={0}
+        onReassign={vi.fn()}
+        workMode="manager_work"
+      />,
+    );
+
+    expect(screen.queryByTestId("task-assignee-control")).not.toBeInTheDocument();
   });
 });

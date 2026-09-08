@@ -222,7 +222,7 @@ async function loadReviewContext(db: any, input: ReviewInput, submittedByUserId:
 
   const { data: task, error: taskError } = await db
     .from("tasks")
-    .select("id,mission_id,primary_checkpoint_id,title,status,approval_state,task_intent,readiness,review_target_id,review_target_type,review_target_version_id,review_target_status,owner_role,work_mode,purpose,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
+    .select("id,mission_id,primary_checkpoint_id,title,status,approval_state,task_intent,readiness,review_target_id,review_target_type,review_target_version_id,review_target_status,owner_role,work_mode,assignee_user_id,assignment_reason,assignment_version,purpose,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
     .eq("id", input.taskId)
     .eq("artist_workspace_id", input.artistWorkspaceId)
     .eq("artist_id", input.artistId)
@@ -250,7 +250,7 @@ async function loadReviewContext(db: any, input: ReviewInput, submittedByUserId:
     selectMany(db, "artist_profiles", "id,display_name,genres,home_market,stage,current_goal,artist_direction,budget_context", input, 1),
     selectMission(db, input, task.mission_id),
     task.primary_checkpoint_id ? selectCheckpoint(db, input, task.primary_checkpoint_id) : null,
-    selectByMission(db, "tasks", "id,mission_id,primary_checkpoint_id,title,status,approval_state,task_intent,readiness,review_target_id,review_target_type,review_target_version_id,review_target_status,owner_role,work_mode,purpose,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late", input, task.mission_id, 80),
+    selectByMission(db, "tasks", "id,mission_id,primary_checkpoint_id,title,status,approval_state,task_intent,readiness,review_target_id,review_target_type,review_target_version_id,review_target_status,owner_role,work_mode,assignee_user_id,assignment_reason,assignment_version,purpose,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late", input, task.mission_id, 80),
     selectMany(db, "task_steps", "id,task_id,order_index,body", input, 160),
     selectMany(db, "task_results", "id,task_id,mission_id,checkpoint_id,status,summary,user_note,manager_interpretation,mission_effect,recommended_follow_up,created_at", input, 80),
     findCompletedTaskResult(db, input),
