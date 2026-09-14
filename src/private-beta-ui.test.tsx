@@ -1,9 +1,9 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { PaywallPreviewScreen } from "./features/onboarding/OnboardingScreens";
+import { PaywallPreviewScreen } from "./features/onboarding/FrontDoorScreens";
 import { createSupabaseAuthAdapter, createSupabaseBillingService } from "./services/productionSupabase";
 
 const preview = {
@@ -25,20 +25,45 @@ const preview = {
 afterEach(cleanup);
 
 describe("private-beta product flow", () => {
-  it("phases beta-code entry out of the paywall while keeping paid checkout primary", () => {
+  it("hides the beta affordance when private beta is disabled", () => {
     const onSubscribe = vi.fn();
     render(
       <PaywallPreviewScreen
         preview={preview}
         onSubscribe={onSubscribe}
         onBack={() => undefined}
+        privateBetaEnabled={false}
+        onRedeemPrivateBeta={() => undefined}
       />,
     );
 
-    expect(screen.getByRole("button", { name: /subscribe \$20\/month/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /view artist source/i })).toHaveAttribute("href", preview.artist.spotifyUrl);
-    expect(screen.queryByRole("button", { name: /use beta code/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /start my desk/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "BETA" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/beta code|access code/i)).not.toBeInTheDocument();
+  });
+
+  it("restores the historical beta form behind the faint BETA trigger", () => {
+    const onRedeemPrivateBeta = vi.fn().mockResolvedValue(undefined);
+    render(
+      <PaywallPreviewScreen
+        preview={preview}
+        onSubscribe={() => undefined}
+        onBack={() => undefined}
+        privateBetaEnabled
+        onRedeemPrivateBeta={onRedeemPrivateBeta}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "BETA" }));
+
+    expect(screen.getByPlaceholderText("Access code")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /activate access/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /start my desk/i })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText("Access code"), { target: { value: " beta-abcd-1234 " } });
+    fireEvent.click(screen.getByRole("button", { name: /activate access/i }));
+
+    expect(onRedeemPrivateBeta).toHaveBeenCalledWith("BETA-ABCD-1234");
   });
 
   it("invokes the isolated beta endpoint without changing paid service methods", async () => {

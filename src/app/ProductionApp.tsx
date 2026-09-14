@@ -3113,6 +3113,26 @@ function SpotifyIdentityGate({
     setMessage(null);
   }
 
+  async function redeemPrivateBetaCode(code: string) {
+    if (!checkoutPreview || !billingService?.redeemPrivateBetaCode) return;
+    try {
+      setSelectPending(true);
+      setMessage(null);
+      trackEvent("beta code submitted", { is_test_user: isTestUserEmail(user?.email) });
+      const result = await billingService.redeemPrivateBetaCode({ checkoutSessionId: checkoutPreview.checkoutSessionId, code });
+      trackEvent("beta invitation activated", {
+        artist_workspace_id: result.workspace.artistWorkspaceId,
+        access_source: "private_beta",
+        is_test_user: isTestUserEmail(user?.email),
+      });
+      onWorkspaceReady(result.workspace);
+    } catch (redemptionError) {
+      setMessage(readErrorMessage(redemptionError, "Private-beta access could not be activated."));
+    } finally {
+      setSelectPending(false);
+    }
+  }
+
   if (checkoutPreview) {
     return (
       <PaywallPreviewScreen
@@ -3132,6 +3152,8 @@ function SpotifyIdentityGate({
         onSubscribe={subscribeToPreview}
         onPlanChange={changeBillingPlan}
         onIntervalChange={changeBillingInterval}
+        privateBetaEnabled={import.meta.env.VITE_PRIVATE_BETA_ENABLED === "true"}
+        onRedeemPrivateBeta={redeemPrivateBetaCode}
         onSignOut={onSignOut}
       />
     );

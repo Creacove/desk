@@ -1,5 +1,5 @@
 import { ArrowLeft, ArrowRight, LoaderCircle, Lock, LogOut, Search } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { BrandMark } from "../../design-system/components";
 import { Button } from "../../design-system/desktopPrimitives";
 import { cn } from "../../lib/utils";
@@ -258,6 +258,8 @@ export function PaywallPreviewScreen({
   onSubscribe,
   onPlanChange,
   onIntervalChange,
+  onRedeemPrivateBeta,
+  privateBetaEnabled = false,
   onBack,
   onSignOut,
 }: {
@@ -268,9 +270,14 @@ export function PaywallPreviewScreen({
   onSubscribe: (interval: "monthly" | "yearly") => void | Promise<void>;
   onPlanChange?: (planKey: "solo" | "team_6") => void | Promise<void>;
   onIntervalChange?: (interval: "monthly" | "yearly") => void | Promise<void>;
+  onRedeemPrivateBeta?: (code: string) => void | Promise<void>;
+  privateBetaEnabled?: boolean;
   onBack: () => void;
   onSignOut?: () => void;
 }) {
+  const [showBetaCode, setShowBetaCode] = useState(false);
+  const [betaCode, setBetaCode] = useState("");
+  const [betaSubmitting, setBetaSubmitting] = useState(false);
   const [selectedInterval, setSelectedInterval] = useState<"monthly" | "yearly">(preview.interval);
   const [selectedPlanKey, setSelectedPlanKey] = useState<"solo" | "team_6">(preview.planKey ?? "solo");
   const artist = preview.artist;
@@ -469,6 +476,56 @@ export function PaywallPreviewScreen({
               <Lock className="h-3 w-3" aria-hidden="true" />
               Secure checkout
             </div>
+
+            {privateBetaEnabled && onRedeemPrivateBeta ? (
+              <div className="mt-4 border-t border-foreground/8 pt-4">
+                {!showBetaCode ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowBetaCode(true)}
+                    className="w-full text-center text-[9px] font-semibold text-muted-foreground/25 underline decoration-transparent underline-offset-4 transition-colors hover:text-muted-foreground/70 hover:decoration-foreground/20 focus-visible:text-foreground focus-visible:decoration-foreground/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/25"
+                  >
+                    BETA
+                  </button>
+                ) : (
+                  <form
+                    className="space-y-2"
+                    onSubmit={async (event: FormEvent<HTMLFormElement>) => {
+                      event.preventDefault();
+                      const normalized = betaCode.trim().toUpperCase();
+                      if (!normalized || betaSubmitting) return;
+                      try {
+                        setBetaSubmitting(true);
+                        await onRedeemPrivateBeta(normalized);
+                      } finally {
+                        setBetaSubmitting(false);
+                      }
+                    }}
+                  >
+                    <label htmlFor="access-code" className="sr-only">Access code</label>
+                    <input
+                      id="access-code"
+                      value={betaCode}
+                      onChange={(event: { target: { value: string } }) => setBetaCode(event.target.value)}
+                      disabled={pending || betaSubmitting}
+                      autoComplete="off"
+                      spellCheck={false}
+                      placeholder="Access code"
+                      className="h-11 w-full rounded-[9px] border border-foreground/12 bg-transparent px-3 text-[16px] font-semibold uppercase text-foreground outline-none focus:border-brand-accent/45"
+                    />
+                    <Button
+                      type="submit"
+                      variant="secondary"
+                      pending={betaSubmitting}
+                      disabled={pending || !betaCode.trim()}
+                      className="w-full"
+                    >
+                      Activate access
+                    </Button>
+                  </form>
+                )}
+              </div>
+            ) : null}
 
           </aside>
         </section>
