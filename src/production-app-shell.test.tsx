@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProductionApp } from "./app/ProductionApp";
 import { ConversationWorkspace, ManagerOfficeScreen } from "./features/manager/ManagerScreens";
 import { MusicWorkspace } from "./features/music/MusicScreens";
+import { installBrowserErrorTelemetry } from "./lib/errorTelemetry";
 import { productionFixtureData } from "./services/fixtureRepositories";
 import type { ArtistProfileViewModel, CleanProductionRepositories, ConversationViewModel, MissionTaskViewModel, MissionViewModel, MusicObjectViewModel, ReleaseSuccessArtifactViewModel, SpotifyImportResult, SpotifyReleaseCandidate, TodayBriefViewModel } from "./types/cleanProduction";
 import type {
@@ -843,6 +844,118 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByText(/your desk opens with catalog import, audience intelligence, manager brief, and music reads/i)).toBeInTheDocument();
     expect(screen.queryByText("Sable Day")).not.toBeInTheDocument();
     expect(screen.queryByText("Night Bus")).not.toBeInTheDocument();
+  }, 20000);
+
+  it("retries and reports a transient artist checkout failure before opening the paywall", async () => {
+    const capture = vi.fn().mockResolvedValue(undefined);
+    const disposeTelemetry = installBrowserErrorTelemetry({ capture });
+    const connectedArtists: Array<{ workspace: ProductionWorkspace; artist: string }> = [];
+    const prepareProviderCheckout = vi.fn()
+      .mockRejectedValueOnce(new Error("Failed to send a request to the Edge Function"))
+      .mockResolvedValue({
+        checkoutSessionId: "checkout-recovered",
+        reference: "checkout-recovered",
+        provider: "paddle" as const,
+        status: "open" as const,
+        artist: {
+          spotifyArtistId: "spotify-artist-1",
+          name: "Nova Vale",
+          spotifyUrl: "https://open.spotify.com/artist/spotify-artist-1",
+          genres: ["afro-fusion"],
+        },
+        interval: "monthly" as const,
+        formattedTotal: "$24",
+        productId: "product-1",
+        priceId: "pri_monthly",
+        paddleConfig: { environment: "sandbox" as const, clientToken: "test_token" },
+        customData: { checkoutSessionId: "checkout-recovered" },
+        intervalOptions: {
+          monthly: { formattedTotal: "$24", priceId: "pri_monthly" },
+          yearly: { formattedTotal: "$240", priceId: "pri_yearly" },
+        },
+      });
+    const billingService = {
+      prepareProviderCheckout,
+      async createCheckoutPreview() { throw new Error("fallback checkout should not run"); },
+      async loadBillingStatus() { throw new Error("billing status should not run"); },
+    } satisfies ProductionBillingService;
+
+    try {
+      render(
+        <ProductionApp
+          authAdapter={authWithSession(session)}
+          workspaceLoader={workspaceLoaderWith(null)}
+          billingService={billingService}
+          spotifyArtistAdapter={spotifyAdapterWithAsyncConnect(connectedArtists)}
+          repositories={repositoriesFor("Nova Vale")}
+          initialView="connectArtist"
+        />,
+      );
+
+      expect(await screen.findByRole("heading", { name: "Find your artist." })).toBeInTheDocument();
+      fireEvent.change(screen.getByLabelText("Search artist name"), { target: { value: "Nova" } });
+      fireEvent.click(await screen.findByRole("button", { name: "Select artist Nova Vale" }));
+
+      expect(await screen.findByRole("heading", { name: "Open Nova Vale’s Desk." })).toBeInTheDocument();
+      expect(prepareProviderCheckout).toHaveBeenCalledTimes(2);
+      await waitFor(() => expect(capture).toHaveBeenCalledWith(expect.objectContaining({
+        operation: "service_call_failed",
+        message: "Failed to send a request to the Edge Function",
+        context: expect.objectContaining({
+          stage: "artist_checkout_prepare",
+          attempt: 1,
+          artistId: "spotify-artist-1",
+          outcome: "retrying",
+        }),
+      })));
+      expect(screen.queryByText("Couldn’t search right now. Try again.")).not.toBeInTheDocument();
+    } finally {
+      disposeTelemetry();
+    }
+  }, 20000);
+
+  it("reports a terminal artist checkout failure with the correct user-facing message", async () => {
+    const capture = vi.fn().mockResolvedValue(undefined);
+    const disposeTelemetry = installBrowserErrorTelemetry({ capture });
+    const connectedArtists: Array<{ workspace: ProductionWorkspace; artist: string }> = [];
+    const prepareProviderCheckout = vi.fn().mockRejectedValue(new Error("Checkout gateway unavailable"));
+    const billingService = {
+      prepareProviderCheckout,
+      async createCheckoutPreview() { throw new Error("fallback checkout should not run"); },
+      async loadBillingStatus() { throw new Error("billing status should not run"); },
+    } satisfies ProductionBillingService;
+
+    try {
+      render(
+        <ProductionApp
+          authAdapter={authWithSession(session)}
+          workspaceLoader={workspaceLoaderWith(null)}
+          billingService={billingService}
+          spotifyArtistAdapter={spotifyAdapterWithAsyncConnect(connectedArtists)}
+          repositories={repositoriesFor("Nova Vale")}
+          initialView="connectArtist"
+        />,
+      );
+
+      expect(await screen.findByRole("heading", { name: "Find your artist." })).toBeInTheDocument();
+      fireEvent.change(screen.getByLabelText("Search artist name"), { target: { value: "Nova" } });
+      fireEvent.click(await screen.findByRole("button", { name: "Select artist Nova Vale" }));
+
+      expect(await screen.findByText("Couldn’t open checkout. Try again.")).toBeInTheDocument();
+      expect(prepareProviderCheckout).toHaveBeenCalledTimes(2);
+      await waitFor(() => expect(capture).toHaveBeenCalledWith(expect.objectContaining({
+        operation: "service_call_failed",
+        message: "Checkout gateway unavailable",
+        context: expect.objectContaining({
+          stage: "artist_checkout_prepare",
+          attempt: 2,
+          artistId: "spotify-artist-1",
+          outcome: "failed",
+        }),
+      })));
+    } finally {
+      disposeTelemetry();
+    }
   }, 20000);
 
   it("opens Desk HQ by default when the workspace setup is already complete", async () => {

@@ -17,6 +17,7 @@ export function ConnectArtistScreen({
   candidates = [],
   pending = false,
   message,
+  messageKind = "search",
   selectedArtistName,
   selectedArtistId,
   onQueryChange,
@@ -29,6 +30,7 @@ export function ConnectArtistScreen({
   candidates?: ProductionSpotifyArtistCandidate[];
   pending?: boolean;
   message?: string | null;
+  messageKind?: "search" | "checkout";
   selectedArtistName?: string | null;
   selectedArtistId?: string | null;
   onQueryChange?: (query: string) => void;
@@ -43,7 +45,9 @@ export function ConnectArtistScreen({
       ? candidates.find((candidate) => candidate.name === selectedArtistName)
       : undefined;
   const selecting = Boolean(selectedArtistName && pending);
-  const presentedMessage = message ? friendlyArtistSearchMessage(message) : null;
+  const presentedMessage = message
+    ? messageKind === "checkout" ? friendlyCheckoutMessage(message) : friendlyArtistSearchMessage(message)
+    : null;
 
   return (
     <FrontDoorPage onSignOut={onSignOut}>

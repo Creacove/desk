@@ -2889,6 +2889,7 @@ function SpotifyIdentityGate({
   const [checkoutPreview, setCheckoutPreview] = useState<ProductionBillingCheckoutPreview | null>(null);
   const [catalogPreview, setCatalogPreview] = useState<ProductionSpotifyCatalogPreview | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [messageKind, setMessageKind] = useState<"search" | "checkout">("search");
   const [searchPending, setSearchPending] = useState(false);
   const [selectPending, setSelectPending] = useState(false);
   const [selectedArtistName, setSelectedArtistName] = useState<string | null>(null);
@@ -2929,7 +2930,8 @@ function SpotifyIdentityGate({
           }
         }
       })
-      .catch(() => {
+      .catch((checkoutPreviewError) => {
+        reportBrowserServiceError(checkoutPreviewError, { stage: "latest_checkout_preview" });
         if (!cancelled) {
           setCheckoutPreview(null);
         }
@@ -2956,12 +2958,18 @@ function SpotifyIdentityGate({
         .then((artists) => {
           if (!cancelled) {
             setCandidates(artists);
+            setMessageKind("search");
             setMessage(artists.length ? null : "No artists matched that search.");
           }
         })
         .catch((searchError) => {
+          reportBrowserServiceError(searchError, {
+            stage: "artist_search",
+            queryLength: normalizedQuery.length,
+          });
           if (!cancelled) {
             setCandidates([]);
+            setMessageKind("search");
             setMessage(readErrorMessage(searchError, "Artist search failed."));
           }
         })
@@ -2993,22 +3001,51 @@ function SpotifyIdentityGate({
       setSelectPending(true);
       setSelectedArtistName(candidate.name);
       setSelectedArtistId(candidate.spotifyArtistId);
+      setMessageKind("search");
       setMessage(null);
       const catalog = spotifyArtistAdapter?.previewCatalog
-        ? await spotifyArtistAdapter.previewCatalog(candidate).catch(() => ({
-            artist: {
-              spotifyArtistId: candidate.spotifyArtistId,
-              name: candidate.name,
-              spotifyUrl: candidate.spotifyUrl,
-              imageUrl: candidate.imageUrl,
-            },
-            standaloneSingles: [],
-          }))
+        ? await spotifyArtistAdapter.previewCatalog(candidate).catch((catalogError) => {
+            reportBrowserServiceError(catalogError, {
+              stage: "artist_catalog_preview",
+              artistId: candidate.spotifyArtistId,
+            });
+            return {
+              artist: {
+                spotifyArtistId: candidate.spotifyArtistId,
+                name: candidate.name,
+                spotifyUrl: candidate.spotifyUrl,
+                imageUrl: candidate.imageUrl,
+              },
+              standaloneSingles: [],
+            };
+          })
         : null;
       const requestId = ++pricingRequestRef.current;
-      const preview = billingService.prepareProviderCheckout
-        ? await billingService.prepareProviderCheckout({ user, candidate, interval: "monthly", providerPreference: "auto" })
-        : await billingService.createCheckoutPreview({ user, candidate });
+      const prepareCheckout = () => billingService.prepareProviderCheckout
+        ? billingService.prepareProviderCheckout({ user, candidate, interval: "monthly", providerPreference: "auto" })
+        : billingService.createCheckoutPreview({ user, candidate });
+      let preview: ProductionBillingCheckoutPreview;
+      try {
+        preview = await prepareCheckout();
+      } catch (firstCheckoutError) {
+        reportBrowserServiceError(firstCheckoutError, {
+          stage: "artist_checkout_prepare",
+          attempt: 1,
+          artistId: candidate.spotifyArtistId,
+          outcome: "retrying",
+        });
+        try {
+          preview = await prepareCheckout();
+        } catch (retryCheckoutError) {
+          reportBrowserServiceError(retryCheckoutError, {
+            stage: "artist_checkout_prepare",
+            attempt: 2,
+            artistId: candidate.spotifyArtistId,
+            outcome: "failed",
+          });
+          throw retryCheckoutError;
+        }
+      }
       if (requestId !== pricingRequestRef.current) return;
       trackEvent("artist selected", {
         artist_id: candidate.spotifyArtistId,
@@ -3020,6 +3057,7 @@ function SpotifyIdentityGate({
         setCheckoutPreview(preview);
       });
     } catch (connectError) {
+      setMessageKind("checkout");
       setMessage(readErrorMessage(connectError, "Checkout preview could not be prepared."));
       setSelectedArtistName(null);
       setSelectedArtistId(null);
@@ -3180,6 +3218,7 @@ function SpotifyIdentityGate({
       candidates={candidates}
       pending={searchPending || selectPending}
       message={message}
+      messageKind={messageKind}
       selectedArtistName={selectedArtistName}
       selectedArtistId={selectedArtistId}
       onQueryChange={setQuery}

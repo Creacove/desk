@@ -29,7 +29,10 @@ export function installBrowserErrorTelemetry({
   const recentlySent = new Map<string, number>();
 
   const submit = (payload: BrowserErrorPayload) => {
-    const fingerprint = `${payload.operation}|${payload.message}|${payload.stack?.split("\n")[1] ?? ""}`;
+    const serviceAttempt = payload.operation === "service_call_failed"
+      ? `|${String(payload.context.stage ?? "")}|${String(payload.context.attempt ?? "")}|${String(payload.context.outcome ?? "")}`
+      : "";
+    const fingerprint = `${payload.operation}|${payload.message}|${payload.stack?.split("\n")[1] ?? ""}${serviceAttempt}`;
     const now = Date.now();
     if ((recentlySent.get(fingerprint) ?? 0) > now - dedupeWindowMs) return;
     recentlySent.set(fingerprint, now);
