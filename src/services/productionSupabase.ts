@@ -325,6 +325,7 @@ export type OperatorWorkspaceSummary = {
   accountName: string | null;
   contactEmail?: string | null;
   contactHandle?: string | null;
+  memberEmails?: string[];
 };
 
 export type OperatorWorkspaceLoader = ProductionWorkspaceLoader & {

@@ -85,6 +85,8 @@ export type LinkableWorkspace = {
   artist_name: string | null;
   account_id: string;
   account_name: string | null;
+  account_member_emails?: string[];
+  contact_emails?: string[];
   contact_email?: string | null;
   contact_handle?: string | null;
 };

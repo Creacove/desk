@@ -79,8 +79,37 @@ async function listWorkspaces(adminClient: any, rawQuery: string) {
     .limit(500);
   const { data, error } = await query;
   if (error) throw error;
+  const rows = data ?? [];
+  const accountIds = [...new Set(rows.map((row: any) => row.account_id).filter(Boolean))];
+  const memberEmailsByAccount = new Map<string, string[]>();
+  if (accountIds.length) {
+    const { data: memberships, error: membershipError } = await adminClient
+      .from("account_memberships")
+      .select("account_id, user_id")
+      .in("account_id", accountIds)
+      .eq("status", "active");
+    if (membershipError) throw membershipError;
+    const userIds = [...new Set((memberships ?? []).map((row: any) => row.user_id).filter(Boolean))];
+    if (userIds.length) {
+      const { data: users, error: usersError } = await adminClient.from("users").select("id, email").in("id", userIds);
+      if (usersError) throw usersError;
+      const emailsByUser = new Map<string, string>();
+      for (const user of users ?? []) {
+        const email = String(user.email ?? "").trim().toLowerCase();
+        if (email) emailsByUser.set(String(user.id), email);
+      }
+      for (const membership of memberships ?? []) {
+        const email = emailsByUser.get(String(membership.user_id));
+        if (!email) continue;
+        const accountId = String(membership.account_id);
+        const emails = memberEmailsByAccount.get(accountId) ?? [];
+        if (!emails.includes(email)) emails.push(email);
+        memberEmailsByAccount.set(accountId, emails);
+      }
+    }
+  }
   const normalizedQuery = queryText.toLowerCase();
-  return (data ?? []).filter((row: any) => {
+  return rows.filter((row: any) => {
     if (!normalizedQuery) return true;
     const caseRow = one(row.ops_cases);
     return [
@@ -93,6 +122,7 @@ async function listWorkspaces(adminClient: any, rawQuery: string) {
       one(row.accounts)?.name,
       caseRow?.primary_contact_email,
       caseRow?.primary_contact_handle,
+      ...(memberEmailsByAccount.get(row.account_id) ?? []),
     ].some((value) => String(value ?? "").toLowerCase().includes(normalizedQuery));
   }).slice(0, MAX_OPERATOR_WORKSPACES).map((row: any) => ({
     artistWorkspaceId: row.id,
@@ -104,6 +134,7 @@ async function listWorkspaces(adminClient: any, rawQuery: string) {
     accountName: one(row.accounts)?.name ?? null,
     contactEmail: one(row.ops_cases)?.primary_contact_email ?? null,
     contactHandle: one(row.ops_cases)?.primary_contact_handle ?? null,
+    memberEmails: memberEmailsByAccount.get(row.account_id) ?? [],
   }));
 }
 

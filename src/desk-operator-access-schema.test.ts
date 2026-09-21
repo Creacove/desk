@@ -7,6 +7,7 @@ const migrationNames = readdirSync(migrationsDir).filter((name) =>
   /_(desk_operator_access|ops_meeting_handoff)\.sql$/i.test(name),
 );
 const migrationSql = migrationNames.map((name) => readFileSync(join(migrationsDir, name), "utf8")).join("\n");
+const identifierMigration = readFileSync(join(migrationsDir, "20260921023800_operator_workspace_identifiers.sql"), "utf8");
 
 describe("Desk operator access schema contract", () => {
   it("creates the kill switch, workspace guard, audit trail, and meeting workflow boundary", () => {
@@ -36,5 +37,12 @@ describe("Desk operator access schema contract", () => {
     ]) {
       expect(migrationSql).not.toMatch(forbidden);
     }
+  });
+
+  it("keeps workspace search identifiable by member and case contact email", () => {
+    expect(identifierMigration).toContain("account_member_emails");
+    expect(identifierMigration).toContain("contact_emails");
+    expect(identifierMigration).toContain("person.email ilike");
+    expect(identifierMigration).toContain("case_row.primary_contact_email ilike");
   });
 });

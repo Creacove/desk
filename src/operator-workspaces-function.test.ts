@@ -24,9 +24,10 @@ describe("operator workspace gateway", () => {
     expect(functionSource).toContain('action: "load"');
     expect(functionSource).toContain("MAX_OPERATOR_WORKSPACES = 25");
     expect(functionSource).toContain("slice(0, MAX_OPERATOR_WORKSPACES)");
+    expect(functionSource).toContain("account_memberships");
+    expect(functionSource).toContain("memberEmails");
     expect(functionSource).toContain("accessMode: \"operator\"");
     expect(functionSource).toContain("workspace_opened");
-    expect(functionSource).not.toContain("account_memberships");
     expect(functionSource).not.toContain("has_active_workspace_entitlement");
     expect(functionSource).not.toContain("return { billing_subscriptions");
   });

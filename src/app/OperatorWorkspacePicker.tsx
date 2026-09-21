@@ -48,9 +48,9 @@ export function OperatorWorkspacePicker({
         <section className="mt-14 max-w-[680px]">
           <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-brand-accent">Operator access</p>
           <h1 className="mt-3 font-display text-[36px] font-semibold tracking-[-0.035em]">Open a Desk workspace.</h1>
-          <p className="mt-3 text-[14px] font-medium text-muted-foreground">Search by artist, workspace, account, ID, or linked contact.</p>
+          <p className="mt-3 text-[14px] font-medium text-muted-foreground">Search by artist, workspace, account, member email, contact, or ID.</p>
           <form className="mt-8 flex items-end gap-2" onSubmit={(event) => { event.preventDefault(); void search(); }}>
-            <div className="min-w-0 flex-1"><Field label="Search workspaces" value={query} onChange={setQuery} helper="Artist, contact, workspace, or ID" /></div>
+            <div className="min-w-0 flex-1"><Field label="Search workspaces" value={query} onChange={setQuery} helper="Artist, email, contact, workspace, or ID" /></div>
             <ProductButton type="submit" variant="secondary" disabled={pending} aria-label="Search workspaces"><Search className="h-4 w-4" /></ProductButton>
           </form>
         </section>
@@ -61,7 +61,7 @@ export function OperatorWorkspacePicker({
                 <strong className="block truncate text-[14px]">{workspace.workspaceName}</strong>
                 <span className="mt-1 block truncate text-[12px] text-muted-foreground">{workspace.artistName ?? "Unnamed artist"} · {workspace.accountName ?? "Unnamed account"} · {workspace.workspaceStatus}</span>
                 <span className="mt-1 block truncate font-mono text-[10px] text-muted-foreground/70">workspace {workspace.artistWorkspaceId} · account {workspace.accountId}</span>
-                {workspace.contactEmail ? <span className="mt-1 block truncate text-[11px] text-muted-foreground/80">{workspace.contactEmail}</span> : null}
+                {[workspace.contactEmail, ...(workspace.memberEmails ?? [])].filter((value, index, values) => value && values.indexOf(value) === index).length ? <span className="mt-1 block truncate text-[11px] text-muted-foreground/80">{[workspace.contactEmail, ...(workspace.memberEmails ?? [])].filter((value, index, values) => value && values.indexOf(value) === index).join(" · ")}</span> : null}
               </span>
               <ArrowUpRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
             </button>

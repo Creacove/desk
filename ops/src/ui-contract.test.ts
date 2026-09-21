@@ -40,4 +40,11 @@ describe("Ops Desk-style UI contract", () => {
     expect(styles).toContain("font-size: 16px");
     expect(index).toContain("fonts.googleapis.com/css2?family=Manrope");
   });
+
+  it("keeps Desk handoff results distinguishable beyond artist names", () => {
+    expect(appSource).toContain("account_member_emails");
+    expect(appSource).toContain("contact_emails");
+    expect(appSource).toContain("workspace {workspace.artist_workspace_id}");
+    expect(appSource).toContain("account {workspace.account_id}");
+  });
 });
