@@ -16,7 +16,7 @@ const owner: WorkspaceMember = { userId: "44444444-4444-4444-8444-444444444444",
 const member: WorkspaceMember = { userId: "55555555-5555-4555-8555-555555555555", displayName: "Sarah", accessRole: "member", operatingTitle: "Distribution lead", responsibilityTags: ["distribution", "DSPs"] };
 const roster: WorkspaceRoster = { scope, members: [owner, member], loadedAt: "2026-09-05T09:00:00.000Z" };
 const capability: WorkspaceTeamCapability = { ...scope, teamName: "Kush House", planKey: "team_6", enabled: true, entitled: true, source: "pilot", seatLimit: 6, occupiedSeats: 2, reservedSeats: 1, endsAt: null };
-const pendingInvitation: TeamInvitation = { id: "66666666-6666-4666-8666-666666666666", artistWorkspaceId: scope.artistWorkspaceId, email: "daniel@example.com", status: "pending", expiresAt: "2026-09-12T09:00:00.000Z", operatingTitle: "Mastering", responsibilityTags: ["audio"] };
+const pendingInvitation: TeamInvitation = { id: "66666666-6666-4666-8666-666666666666", artistWorkspaceId: scope.artistWorkspaceId, email: "daniel@example.com", status: "pending", expiresAt: "2099-09-12T09:00:00.000Z", operatingTitle: "Mastering", responsibilityTags: ["audio"] };
 
 function createService(overrides: Partial<WorkspaceTeamService> = {}) {
   return {
