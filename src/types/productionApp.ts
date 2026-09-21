@@ -55,6 +55,22 @@ export type ProductionWorkspace = {
   accessEndsAt?: string;
   renewalAt?: string;
   paddleCustomerId?: string;
+  accessMode?: "customer" | "operator";
+};
+
+export type WorkspaceAccessContext = {
+  mode: "customer" | "operator";
+  artistWorkspaceId?: string;
+  operatorUserId?: string;
+  opsMeetingId?: string;
+  capabilities: {
+    canRead: boolean;
+    canWrite: boolean;
+    canUseBilling: boolean;
+    canManageTeam: boolean;
+    canUpload: boolean;
+    canProcessOpsMeeting: boolean;
+  };
 };
 
 export type ProductionWorkspaceDraft = {
@@ -64,6 +80,7 @@ export type ProductionWorkspaceDraft = {
 
 export type ProductionWorkspaceLoader = {
   loadActiveWorkspace(user: ProductionUser): Promise<ProductionWorkspace | null>;
+  loadWorkspaceById?(user: ProductionUser, artistWorkspaceId: string): Promise<ProductionWorkspace | null>;
   loadCatalogSyncStatus?(workspace: ProductionWorkspace): Promise<ProductionWorkspace["latestCatalogSyncStatus"]>;
   createInitialWorkspace?(user: ProductionUser, draft: ProductionWorkspaceDraft): Promise<ProductionWorkspace>;
 };

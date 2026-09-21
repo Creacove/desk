@@ -54,7 +54,12 @@ import {
   createSupabaseProfileSetupService,
   createSupabaseSpotifyArtistAdapter,
   createSupabaseWorkspaceLoader,
+  createOperatorWorkspaceLoader,
+  type OperatorWorkspaceLoader,
+  type OperatorWorkspaceSummary,
 } from "../services/productionSupabase";
+import { createOperatorReadOnlyRepositories } from "../services/operatorRepositories";
+import { OperatorWorkspacePicker } from "./OperatorWorkspacePicker";
 import { createActiveRunFallback } from "../services/activeRunFallback";
 import { createResourceRequestCoordinator, type ResourceKey } from "../services/resourceRequestCoordinator";
 import { createWorkspaceTeamService, type WorkspaceTeamService } from "../services/workspaceTeamService";
@@ -108,6 +113,7 @@ import type {
   ProductionUser,
   ProductionWorkspace,
   ProductionWorkspaceLoader,
+  WorkspaceAccessContext,
 } from "../types/productionApp";
 import type { WorkspaceRoster, WorkspaceTeamCapability } from "../types/workspaceTeam";
 
@@ -124,6 +130,8 @@ type ProductionAppProps = {
   initialView?: CleanProductionView;
   fixtureMode?: boolean;
   teamService?: WorkspaceTeamService | null;
+  accessContext?: WorkspaceAccessContext;
+  onBackToOperatorWorkspaces?: () => void;
 };
 
 type MissionRoomTab = "pulse" | "tasks" | "checkpoints" | "activity";
@@ -143,15 +151,18 @@ export function ProductionApp({
   initialView = "connectArtist",
   fixtureMode = false,
   teamService,
+  accessContext,
+  onBackToOperatorWorkspaces,
 }: ProductionAppProps) {
   const shouldUseFixtureRuntime = fixtureMode || import.meta.env.VITE_PRODUCTION_FIXTURES === "true";
-  const liveUpdatesEnabled = !shouldUseFixtureRuntime && import.meta.env.VITE_WORKSPACE_LIVE_UPDATES === "true";
+  const isOperatorMode = accessContext?.mode === "operator";
+  const liveUpdatesEnabled = !shouldUseFixtureRuntime && !isOperatorMode && import.meta.env.VITE_WORKSPACE_LIVE_UPDATES === "true";
   const paymentReturnReference = useMemo(() => readPaymentReturnReference(), []);
 
   const runtime = useMemo(() => {
     if (shouldUseFixtureRuntime) {
       const fixtureRuntime = createFixtureProductionRuntime();
-      const repositoriesForWorkspace = () => {
+      const repositoriesForWorkspace = (_nextWorkspace?: ProductionWorkspace) => {
         if (repositories) {
           return repositories;
         }
@@ -164,11 +175,13 @@ export function ProductionApp({
         supabaseClient: null,
         authAdapter: authAdapter ?? fixtureRuntime.authAdapter,
         workspaceLoader: workspaceLoader ?? fixtureRuntime.workspaceLoader,
+        operatorWorkspaceLoader: null as OperatorWorkspaceLoader | null,
         teamService: teamService ?? null,
-        billingService,
+        billingService: isOperatorMode ? undefined : billingService,
         spotifyArtistAdapter,
-        profileSetupService,
-        repositoriesForWorkspace,
+        profileSetupService: isOperatorMode ? undefined : profileSetupService,
+        repositoriesForWorkspace: (nextWorkspace: ProductionWorkspace) =>
+          isOperatorMode ? createOperatorReadOnlyRepositories(repositoriesForWorkspace(nextWorkspace)) : repositoriesForWorkspace(nextWorkspace),
       };
     }
 
@@ -180,10 +193,11 @@ export function ProductionApp({
 
     return {
       supabaseClient: liveUpdatesEnabled ? getClient() : null,
-      teamService: teamService ?? createWorkspaceTeamService(getClient()),
+      teamService: isOperatorMode ? null : teamService ?? createWorkspaceTeamService(getClient()),
       authAdapter: authAdapter ?? createSupabaseAuthAdapter(getClient()),
       workspaceLoader: workspaceLoader ?? createSupabaseWorkspaceLoader(getClient()),
-      billingService: billingService ?? createSupabaseBillingService(getClient()),
+      operatorWorkspaceLoader: createOperatorWorkspaceLoader(getClient()),
+      billingService: isOperatorMode ? undefined : billingService ?? createSupabaseBillingService(getClient()),
       spotifyArtistAdapter:
         spotifyArtistAdapter ??
         ({
@@ -195,6 +209,9 @@ export function ProductionApp({
             createSupabaseSpotifyArtistAdapter(getClient()).bootstrapCatalog(nextWorkspace, candidate),
         } satisfies ProductionSpotifyArtistAdapter),
       profileSetupService:
+        isOperatorMode
+          ? undefined
+          :
         profileSetupService ??
         ({
           saveSetupContext: (nextWorkspace, profile) =>
@@ -202,15 +219,18 @@ export function ProductionApp({
           updateArtistProfile: (nextWorkspace, profile) =>
             createSupabaseProfileSetupService(getClient()).updateArtistProfile!(nextWorkspace, profile),
         } satisfies ProductionProfileSetupService),
-      repositoriesForWorkspace: (nextWorkspace: ProductionWorkspace) =>
-        repositories ?? createSupabaseProductionRepositories(getClient(), nextWorkspace),
+      repositoriesForWorkspace: (nextWorkspace: ProductionWorkspace) => {
+        const base = repositories ?? createSupabaseProductionRepositories(getClient(), nextWorkspace);
+        return isOperatorMode ? createOperatorReadOnlyRepositories(base) : base;
+      },
     };
-  }, [authAdapter, billingService, liveUpdatesEnabled, profileSetupService, repositories, shouldUseFixtureRuntime, spotifyArtistAdapter, teamService, workspaceLoader]);
+  }, [accessContext?.mode, authAdapter, billingService, isOperatorMode, liveUpdatesEnabled, profileSetupService, repositories, shouldUseFixtureRuntime, spotifyArtistAdapter, teamService, workspaceLoader]);
 
-  const [status, setStatus] = useState<"loading" | "signed-out" | "missing-workspace" | "ready" | "payment-return" | "error">("loading");
+  const [status, setStatus] = useState<"loading" | "signed-out" | "missing-workspace" | "operator-list" | "ready" | "payment-return" | "error">("loading");
   const [session, setSession] = useState<ProductionSession | null>(null);
   const [workspace, setWorkspace] = useState<ProductionWorkspace | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [operatorWorkspaces, setOperatorWorkspaces] = useState<OperatorWorkspaceSummary[] | null>(null);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
   const [planDialogOpen, setPlanDialogOpen] = useState(false);
   const [paymentReturn, setPaymentReturn] = useState<PaymentReturnState | null>(
@@ -220,6 +240,12 @@ export function ProductionApp({
   const sessionUser = session?.user ?? null;
   const activeWorkspaceId = workspace?.artistWorkspaceId ?? null;
   const activeCatalogSyncStatus = workspace?.latestCatalogSyncStatus;
+  const loadCurrentWorkspace = useCallback((user: ProductionUser) => {
+    if (isOperatorMode && accessContext?.artistWorkspaceId && runtime.workspaceLoader.loadWorkspaceById) {
+      return runtime.workspaceLoader.loadWorkspaceById(user, accessContext.artistWorkspaceId);
+    }
+    return runtime.workspaceLoader.loadActiveWorkspace(user);
+  }, [accessContext?.artistWorkspaceId, isOperatorMode, runtime.workspaceLoader]);
   const handlePlanCheckoutOpened = useCallback((preview: ProductionBillingCheckoutPreview) => {
     if (preview.provider !== "paddle" || !sessionUser) return;
     const reference = `paddle:${preview.checkoutSessionId}`;
@@ -265,6 +291,21 @@ export function ProductionApp({
         return;
       }
 
+      // A normal Desk login may also be an Ops operator. Probe the same
+      // server-side gateway before customer membership/entitlement loading;
+      // a 403 simply means this is an ordinary customer and is ignored.
+      if (!isOperatorMode && runtime.operatorWorkspaceLoader) {
+        try {
+          const available = await runtime.operatorWorkspaceLoader.listOperatorWorkspaces("");
+          setOperatorWorkspaces(available);
+          setWorkspace(null);
+          setStatus("operator-list");
+          return;
+        } catch {
+          setOperatorWorkspaces(null);
+        }
+      }
+
       if (paymentReturnReference) {
         setWorkspace(null);
         setPaymentReturn({ reference: paymentReturnReference, status: "checking" });
@@ -273,7 +314,7 @@ export function ProductionApp({
         return;
       }
 
-      const nextWorkspace = await runtime.workspaceLoader.loadActiveWorkspace(nextSession.user);
+      const nextWorkspace = await loadCurrentWorkspace(nextSession.user);
       if (!nextWorkspace) {
         setWorkspace(null);
         setStatus("missing-workspace");
@@ -286,7 +327,7 @@ export function ProductionApp({
       setError(readErrorMessage(loadError, "Production workspace could not load."));
       setStatus("error");
     }
-  }, [paymentReturnReference, runtime]);
+  }, [isOperatorMode, loadCurrentWorkspace, paymentReturnReference, runtime]);
 
   const handleSignOut = useCallback(async () => {
     try {
@@ -294,6 +335,7 @@ export function ProductionApp({
       await runtime.authAdapter.signOut?.();
       setSession({ user: null });
       setWorkspace(null);
+      setOperatorWorkspaces(null);
       setStatus("signed-out");
       resetAnalyticsUser();
     } catch (signOutError) {
@@ -484,7 +526,7 @@ export function ProductionApp({
       isVisible: () => document.visibilityState !== "hidden",
       isOnline: () => navigator.onLine !== false,
       check: async () => {
-        const refreshed = await runtime.workspaceLoader.loadActiveWorkspace(sessionUser);
+        const refreshed = await loadCurrentWorkspace(sessionUser);
         if (!refreshed || refreshed.artistWorkspaceId !== targetWorkspaceId) return "active";
         if (!cancelled) setWorkspace(refreshed);
         return refreshed.setupStatus === "completed" || refreshed.setupStatus === "failed" ? "terminal" : "active";
@@ -506,13 +548,13 @@ export function ProductionApp({
       window.removeEventListener("online", resume);
       fallback.stop();
     };
-  }, [runtime.billingService, runtime.workspaceLoader, sessionUser, workspace?.artistWorkspaceId, workspace?.billingCheckoutSessionId, workspace?.contextComplete, workspace?.setupStatus]);
+  }, [loadCurrentWorkspace, runtime.billingService, runtime.workspaceLoader, sessionUser, workspace?.artistWorkspaceId, workspace?.billingCheckoutSessionId, workspace?.contextComplete, workspace?.setupStatus]);
 
   useEffect(() => {
     if (!sessionUser || !workspace?.artistWorkspaceId || !runtime.billingService?.subscribeWorkspaceAccess) return;
     let disposed = false;
     const refreshAccess = async () => {
-      const refreshed = await runtime.workspaceLoader.loadActiveWorkspace(sessionUser).catch(() => null);
+      const refreshed = await loadCurrentWorkspace(sessionUser).catch(() => null);
       if (!disposed && refreshed?.artistWorkspaceId === workspace.artistWorkspaceId) setWorkspace(refreshed);
     };
     const unsubscribe = runtime.billingService.subscribeWorkspaceAccess(workspace, () => void refreshAccess());
@@ -534,7 +576,7 @@ export function ProductionApp({
       unsubscribe();
       if (timeout !== undefined) window.clearTimeout(timeout);
     };
-  }, [runtime.billingService, runtime.workspaceLoader, sessionUser, workspace?.artistWorkspaceId, workspace?.accessType, workspace?.accessEndsAt, workspace?.renewalAt]);
+  }, [loadCurrentWorkspace, runtime.billingService, runtime.workspaceLoader, sessionUser, workspace?.artistWorkspaceId, workspace?.accessType, workspace?.accessEndsAt, workspace?.renewalAt]);
 
   if (typeof window !== "undefined" && window.location.pathname === "/update-password") {
     return <UpdatePasswordScreen authAdapter={runtime.authAdapter} onComplete={() => { window.history.replaceState({}, "", "/"); void loadProductionState(); }} />;
@@ -546,6 +588,19 @@ export function ProductionApp({
 
   if (status === "signed-out") {
     return <FrontDoorAuthScreen authAdapter={runtime.authAdapter} onAuthenticated={loadProductionState} />;
+  }
+
+  if (status === "operator-list" && sessionUser && runtime.operatorWorkspaceLoader) {
+    return (
+      <OperatorWorkspacePicker
+        loader={runtime.operatorWorkspaceLoader}
+        initialWorkspaces={operatorWorkspaces ?? []}
+        onSelect={(artistWorkspaceId) => {
+          window.location.assign(`/admin/workspaces/${encodeURIComponent(artistWorkspaceId)}`);
+        }}
+        onSignOut={handleSignOut}
+      />
+    );
   }
 
   if (status === "payment-return" && paymentReturn) {
@@ -590,7 +645,7 @@ export function ProductionApp({
     );
   }
 
-  if (workspace?.spotifyConnected && workspace.entitlementActive !== true && session?.user && runtime.billingService) {
+  if (!isOperatorMode && workspace?.spotifyConnected && workspace.entitlementActive !== true && session?.user && runtime.billingService) {
     return (
       <SubscriptionRecoveryGate
         user={session.user}
@@ -605,7 +660,7 @@ export function ProductionApp({
     );
   }
 
-  if (workspace?.spotifyConnected && workspace.entitlementActive !== true) {
+  if (!isOperatorMode && workspace?.spotifyConnected && workspace.entitlementActive !== true) {
     return (
       <FrontDoorMessageScreen
         title="Billing is temporarily unavailable"
@@ -615,7 +670,7 @@ export function ProductionApp({
     );
   }
 
-  if (workspace && !workspace.spotifyConnected) {
+  if (!isOperatorMode && workspace && !workspace.spotifyConnected) {
     return (
       <SpotifyIdentityGate
         user={session?.user ?? null}
@@ -650,11 +705,13 @@ export function ProductionApp({
       billingService={runtime.billingService}
       spotifyArtistAdapter={runtime.spotifyArtistAdapter}
       fixtureRuntime={shouldUseFixtureRuntime}
-      initialView={shouldUseFixtureRuntime ? initialView : resolveWorkspaceInitialView(workspace as ProductionWorkspace, initialView)}
+      initialView={isOperatorMode ? "labelHQ" : shouldUseFixtureRuntime ? initialView : resolveWorkspaceInitialView(workspace as ProductionWorkspace, initialView)}
       onWorkspaceChange={setWorkspace}
       onSignOut={handleSignOut}
       onChoosePlan={() => setPlanDialogOpen(true)}
       teamService={runtime.teamService}
+      accessContext={accessContext}
+      onBackToOperatorWorkspaces={onBackToOperatorWorkspaces}
     />
     {workspace && runtime.billingService ? (
       <SubscriptionPlanDialog
@@ -687,6 +744,8 @@ function CleanProductionWorkspace({
   onSignOut,
   onChoosePlan,
   teamService,
+  accessContext,
+  onBackToOperatorWorkspaces,
 }: {
   analyticsUser: ProductionUser;
   authAdapter: ProductionAuthAdapter;
@@ -704,7 +763,10 @@ function CleanProductionWorkspace({
   onSignOut?: () => void;
   onChoosePlan?: () => void;
   teamService?: WorkspaceTeamService | null;
+  accessContext?: WorkspaceAccessContext;
+  onBackToOperatorWorkspaces?: () => void;
 }) {
+  const isOperatorMode = accessContext?.mode === "operator";
   const isTestUser = isTestUserEmail(analyticsUser.email);
   const { mode: themeMode, resolvedMode: resolvedThemeMode, setMode: setThemeMode } = useTheme();
   const [view, setView] = useState<CleanProductionView>(initialView);
@@ -758,6 +820,12 @@ function CleanProductionWorkspace({
   const [todayBriefPending, setTodayBriefPending] = useState(false);
   const [todayBriefError, setTodayBriefError] = useState<string | null>(null);
   const [activeTodayBriefRun, setActiveTodayBriefRun] = useState<{ id: string; mode: TodayBriefGenerationMode } | null>(null);
+  const loadWorkspaceForContext = useCallback((user: ProductionUser) => {
+    if (isOperatorMode && accessContext?.artistWorkspaceId && workspaceLoader.loadWorkspaceById) {
+      return workspaceLoader.loadWorkspaceById(user, accessContext.artistWorkspaceId);
+    }
+    return workspaceLoader.loadActiveWorkspace(user);
+  }, [accessContext?.artistWorkspaceId, isOperatorMode, workspaceLoader]);
   const todayBriefRefreshInFlight = useRef(false);
   const [publicContextPending, setPublicContextPending] = useState(false);
   const [activityCenterOpen, setActivityCenterOpen] = useState(false);
@@ -938,7 +1006,7 @@ function CleanProductionWorkspace({
     if (view !== "setup" || !workspace?.contextComplete || isWorkspaceReadyForDesk(workspace)) return;
     let disposed = false;
     async function rehydrateAfterReconnect() {
-      const refreshed = await workspaceLoader.loadActiveWorkspace(analyticsUser);
+      const refreshed = await loadWorkspaceForContext(analyticsUser);
       if (disposed || !refreshed) return;
       onWorkspaceChange?.(refreshed);
       if (isWorkspaceReadyForDesk(refreshed)) enterDeskWithProgressiveTransition(() => setView("labelHQ"));
@@ -948,7 +1016,7 @@ function CleanProductionWorkspace({
       disposed = true;
       window.removeEventListener("online", rehydrateAfterReconnect);
     };
-  }, [analyticsUser, onWorkspaceChange, view, workspace, workspaceLoader]);
+  }, [analyticsUser, loadWorkspaceForContext, onWorkspaceChange, view, workspace, workspaceLoader]);
 
   useEffect(() => {
     if (
@@ -1195,6 +1263,9 @@ function CleanProductionWorkspace({
   }
 
   function navigateFromMenu(nextView: CleanProductionView) {
+    if (isOperatorMode && (nextView === "artistProfileWorkspace" || nextView === "settings" || nextView === "setup" || nextView === "connectArtist")) {
+      return;
+    }
     if (nextView === "musicWorkspace") {
       setTargetSongRoomTab("overview");
       setTargetSongDocumentId(null);
@@ -1802,7 +1873,7 @@ function CleanProductionWorkspace({
     let loadedMissions: MissionViewModel[] | undefined;
 
     if (scopes.has("workspace")) {
-      baseLoads.push(workspaceLoader.loadActiveWorkspace(analyticsUser).then((nextWorkspace) => {
+      baseLoads.push(loadWorkspaceForContext(analyticsUser).then((nextWorkspace) => {
         if (!nextWorkspace) return;
         onWorkspaceChange?.(nextWorkspace);
         if (isWorkspaceReadyForDesk(nextWorkspace)) setView("labelHQ");
@@ -2032,7 +2103,7 @@ function CleanProductionWorkspace({
             },
           });
         } else {
-          const refreshedWorkspace = await workspaceLoader.loadActiveWorkspace(analyticsUser);
+          const refreshedWorkspace = await loadWorkspaceForContext(analyticsUser);
           if (refreshedWorkspace) onWorkspaceChange?.(refreshedWorkspace);
           return;
         }
@@ -2075,7 +2146,7 @@ function CleanProductionWorkspace({
       if (workspace.billingCheckoutSessionId && billingService?.retrySetup) {
         const result = await billingService.retrySetup({ checkoutSessionId: workspace.billingCheckoutSessionId });
         if (result.workspace) onWorkspaceChange?.(result.workspace);
-        const refreshedWorkspace = await workspaceLoader.loadActiveWorkspace(analyticsUser);
+        const refreshedWorkspace = await loadWorkspaceForContext(analyticsUser);
         if (refreshedWorkspace) onWorkspaceChange?.(refreshedWorkspace);
         return;
       }
@@ -2386,6 +2457,14 @@ function CleanProductionWorkspace({
 
   return (
     <div className="app-theme min-h-screen bg-background text-foreground selection:bg-brand-accent/15">
+      {isOperatorMode ? (
+        <OperatorAccessBanner
+          artistName={workspace?.artistName}
+          workspaceName={workspace?.workspaceName}
+          workspaceId={workspace?.artistWorkspaceId}
+          onBack={onBackToOperatorWorkspaces}
+        />
+      ) : null}
       <div className="relative z-20 mx-auto grid min-h-screen w-full max-w-[1760px] gap-0 px-3 pb-28 pt-0 sm:px-5 lg:grid-cols-[216px_minmax(0,1fr)] lg:px-0 lg:py-0 lg:pb-0">
         <DeskRail
           active={activeSection}
@@ -3375,7 +3454,7 @@ async function refreshPaymentReturnStatus(
   billingService: ProductionBillingService | undefined,
   setPaymentReturn: (state: PaymentReturnState | null) => void,
   setWorkspace: (workspace: ProductionWorkspace | null) => void,
-  setStatus: (status: "loading" | "signed-out" | "missing-workspace" | "ready" | "payment-return" | "error") => void,
+  setStatus: (status: "loading" | "signed-out" | "missing-workspace" | "operator-list" | "ready" | "payment-return" | "error") => void,
   setSuccessNotice: (message: string | null) => void,
 ): Promise<"active" | "terminal"> {
   if (!billingService) {
@@ -3489,6 +3568,21 @@ function SuccessToast({ message, onClose }: { message: string; onClose: () => vo
       <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" aria-hidden="true" />
       <p className="text-[12px] font-bold leading-relaxed">{message}</p>
       <button type="button" aria-label="Close notification" onClick={onClose} className="ml-1 rounded p-0.5 text-white/70 hover:text-white"><X className="h-4 w-4" /></button>
+    </div>
+  );
+}
+
+function OperatorAccessBanner({ artistName, workspaceName, workspaceId, onBack }: { artistName?: string; workspaceName?: string; workspaceId?: string; onBack?: () => void }) {
+  return (
+    <div data-testid="operator-access-banner" className="border-b border-amber-900/10 bg-[#fff8e8] px-4 py-2.5 text-[#5a451d] sm:px-6">
+      <div className="mx-auto flex w-full max-w-[1760px] items-center justify-between gap-3 text-[11px] font-semibold">
+        <span>Internal read-only access{artistName ? ` · ${artistName}` : ""}{workspaceName ? ` · ${workspaceName}` : ""}{workspaceId ? <span className="ml-2 font-mono text-[10px] font-medium opacity-70">{workspaceId}</span> : null}</span>
+        {onBack ? (
+          <button type="button" className="shrink-0 underline decoration-[#5a451d]/30 underline-offset-4 hover:decoration-[#5a451d]" onClick={onBack}>
+            Back to workspaces
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }

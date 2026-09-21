@@ -11,6 +11,7 @@ import { createSupabaseAuthAdapter, createSupabaseProductionRepositories } from 
 import { createWorkspaceTeamService } from "./services/workspaceTeamService";
 import { loadPublicMusicShare } from "./services/publicMusicShare";
 import { TeamJoinRoute } from "./features/team/TeamJoinRoute";
+import { OperatorWorkspaceRoute, parseOperatorWorkspaceRoute } from "./app/OperatorWorkspaceRoute";
 import { FrontDoorMessageScreen } from "./features/onboarding/FrontDoorAuth";
 import "./index.css";
 import type { CleanProductionView } from "./types/cleanProduction";
@@ -34,6 +35,7 @@ const fixtureMode = params.get("fixtures") === "true";
 const splitConfirmationToken = window.location.pathname === "/split-confirmation" ? params.get("token") ?? "" : "";
 const publicShareToken = window.location.pathname === "/share" ? params.get("token") ?? "" : "";
 const teamJoinRoute = window.location.pathname === "/join";
+const operatorWorkspaceRoute = parseOperatorWorkspaceRoute(window.location.pathname);
 let teamClient: ReturnType<typeof createBrowserSupabaseClient> | null = null;
 if (teamJoinRoute) {
   try {
@@ -44,7 +46,7 @@ if (teamJoinRoute) {
 }
 const teamService = teamClient ? createWorkspaceTeamService(teamClient) : null;
 const teamAuthAdapter = teamClient ? createSupabaseAuthAdapter(teamClient) : null;
-if (import.meta.env.PROD && !splitConfirmationToken && !publicShareToken && !teamJoinRoute && import.meta.env.VITE_APP_MODE !== "prototype") {
+if (import.meta.env.PROD && !splitConfirmationToken && !publicShareToken && !teamJoinRoute && !operatorWorkspaceRoute && import.meta.env.VITE_APP_MODE !== "prototype") {
   const telemetryClient = createBrowserSupabaseClient();
   installBrowserErrorTelemetry({
     capture: async (payload) => {
@@ -53,6 +55,14 @@ if (import.meta.env.PROD && !splitConfirmationToken && !publicShareToken && !tea
       await telemetryClient.functions.invoke("capture-browser-error", { body: payload });
     },
   });
+}
+let operatorClient: ReturnType<typeof createBrowserSupabaseClient> | null = null;
+if (operatorWorkspaceRoute) {
+  try {
+    operatorClient = createBrowserSupabaseClient();
+  } catch {
+    operatorClient = null;
+  }
 }
 const publicSplitWorkspace = {
   accountId: "public-split-confirmation",
@@ -78,6 +88,10 @@ const app = splitConfirmationToken ? (
     teamService && teamAuthAdapter
       ? <TeamJoinRoute service={teamService} authAdapter={teamAuthAdapter} />
       : <FrontDoorMessageScreen title="Invitation unavailable" body="This environment is not configured to accept team invitations." />
+  ) : operatorWorkspaceRoute ? (
+    operatorClient
+      ? <OperatorWorkspaceRoute client={operatorClient} />
+      : <FrontDoorMessageScreen title="Ops unavailable" body="This environment is not configured to open operator workspaces." />
   ) : import.meta.env.VITE_APP_MODE === "prototype" ? (
     <AiLabelPrototype />
   ) : (

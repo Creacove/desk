@@ -315,6 +315,53 @@ export function createSupabaseWorkspaceLoader(client: SupabaseClient): Productio
   };
 }
 
+export type OperatorWorkspaceSummary = {
+  artistWorkspaceId: string;
+  accountId: string;
+  artistId: string;
+  workspaceName: string;
+  workspaceStatus: string;
+  artistName: string | null;
+  accountName: string | null;
+  contactEmail?: string | null;
+  contactHandle?: string | null;
+  memberEmails?: string[];
+};
+
+export type OperatorWorkspaceLoader = ProductionWorkspaceLoader & {
+  listOperatorWorkspaces(query?: string): Promise<OperatorWorkspaceSummary[]>;
+};
+
+/**
+ * The operator gateway is intentionally a separate loader. It never writes the
+ * customer workspace preference and it never falls back to loadActiveWorkspace.
+ */
+export function createOperatorWorkspaceLoader(client: SupabaseClient): OperatorWorkspaceLoader {
+  async function invoke(body: Record<string, unknown>) {
+    const { data, error } = await client.functions.invoke("operator-workspaces", { body });
+    if (error) throw error;
+    if (data && typeof data === "object" && "error" in data && typeof (data as { error?: unknown }).error === "string") {
+      throw new Error((data as { error: string }).error);
+    }
+    return data as Record<string, unknown>;
+  }
+
+  return {
+    async loadActiveWorkspace() {
+      return null;
+    },
+    async loadWorkspaceById(_user, artistWorkspaceId) {
+      const data = await invoke({ action: "load", artistWorkspaceId });
+      if (!data || typeof data.artistWorkspaceId !== "string") return null;
+      return { ...data, accessMode: "operator" } as unknown as ProductionWorkspace;
+    },
+    async listOperatorWorkspaces(query = "") {
+      const data = await invoke({ action: "list", query });
+      return Array.isArray(data?.workspaces) ? data.workspaces as OperatorWorkspaceSummary[] : [];
+    },
+  };
+}
+
 export function createSupabaseMusicLibraryLoader(client: SupabaseClient): ProductionMusicLibraryLoader {
   return {
     async loadMusicLibrary(workspace) {
