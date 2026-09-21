@@ -56,7 +56,7 @@ export async function requireOperatorWorkspaceAccess(
   }
 
   if (targetWorkspaceId !== undefined) {
-    if (!UUID_PATTERN.test(targetWorkspaceId)) {
+    if (!isUuid(targetWorkspaceId)) {
       throw new OperatorAuthorizationError(403, "Operator workspace access is not available.");
     }
     const { data: workspace, error: workspaceError } = await adminClient

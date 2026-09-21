@@ -15,6 +15,7 @@ const corsHeaders = {
   "Cache-Control": "no-store",
   "Content-Type": "application/json",
 };
+const MAX_OPERATOR_WORKSPACES = 25;
 
 Deno.serve(withAppErrorCapture("operator-workspaces", async (request) => {
   if (request.method === "OPTIONS") return json({ ok: true });
@@ -71,14 +72,29 @@ async function listWorkspaces(adminClient: any, rawQuery: string) {
       status,
       created_at,
       accounts!artist_workspaces_account_id_fkey(name),
-      artists!artist_workspaces_artist_id_fkey(display_name)
+      artists!artist_workspaces_artist_id_fkey(display_name, canonical_spotify_artist_id),
+      ops_cases!ops_cases_desk_workspace_id_fkey(primary_contact_email, primary_contact_handle)
     `)
     .order("created_at", { ascending: false })
-    .limit(25);
-  if (queryText) query = query.ilike("name", `%${escapeLike(queryText)}%`);
+    .limit(500);
   const { data, error } = await query;
   if (error) throw error;
-  return (data ?? []).map((row: any) => ({
+  const normalizedQuery = queryText.toLowerCase();
+  return (data ?? []).filter((row: any) => {
+    if (!normalizedQuery) return true;
+    const caseRow = one(row.ops_cases);
+    return [
+      row.name,
+      row.id,
+      row.account_id,
+      row.artist_id,
+      one(row.artists)?.display_name,
+      one(row.artists)?.canonical_spotify_artist_id,
+      one(row.accounts)?.name,
+      caseRow?.primary_contact_email,
+      caseRow?.primary_contact_handle,
+    ].some((value) => String(value ?? "").toLowerCase().includes(normalizedQuery));
+  }).slice(0, MAX_OPERATOR_WORKSPACES).map((row: any) => ({
     artistWorkspaceId: row.id,
     accountId: row.account_id,
     artistId: row.artist_id,
@@ -86,6 +102,8 @@ async function listWorkspaces(adminClient: any, rawQuery: string) {
     workspaceStatus: row.status,
     artistName: one(row.artists)?.display_name ?? null,
     accountName: one(row.accounts)?.name ?? null,
+    contactEmail: one(row.ops_cases)?.primary_contact_email ?? null,
+    contactHandle: one(row.ops_cases)?.primary_contact_handle ?? null,
   }));
 }
 
@@ -168,10 +186,6 @@ function one(value: any) {
 
 function latestBy(rows: any[], key: string) {
   return [...(rows ?? [])].sort((left, right) => (Date.parse(right?.[key] ?? "") || 0) - (Date.parse(left?.[key] ?? "") || 0))[0];
-}
-
-function escapeLike(value: string) {
-  return value.replace(/[\\%_]/g, (character) => `\\${character}`);
 }
 
 function json(body: unknown, status = 200) {

@@ -17,7 +17,8 @@ type ManagerGraphContext = {
   conversationId?: string;
   runId: string;
   actionId?: string;
-  sourceType: "manager_conversation" | "mission_genesis";
+  sourceType: "manager_conversation" | "mission_genesis" | "ops_meeting";
+  sourceId?: string;
   trigger: string;
   scopedMissionId?: string;
 };
@@ -527,6 +528,7 @@ async function writeOperatingEvent(db: any, input: MissionGraphInput, context: M
     artist_id: input.artistId,
     actor_type: "manager",
     source_type: context.sourceType,
+    source_id: context.sourceId ?? null,
     manager_synthesis_run_id: context.runId,
     ...event,
     dedupe_key: `${context.runId}:${String(event.event_type ?? "manager_graph")}:${String(event.target_type ?? "target")}:${String(event.target_id ?? "")}`,

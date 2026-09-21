@@ -18,6 +18,9 @@ describe("Desk operator access schema contract", () => {
       "private.operator_access_config",
       "private.can_operator_access_workspace",
       "ops_meeting_ingestion_v1",
+      "claim_ops_meeting_processing_v1",
+      "finalize_ops_meeting_processing_v1",
+      "ops_meeting_processing_is_service_role_only",
     ]) {
       expect(migrationSql).toContain(required);
     }

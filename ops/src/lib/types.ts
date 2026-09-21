@@ -2,6 +2,15 @@ export type Stage = "new" | "qualifying" | "meeting" | "activation" | "active" |
 export type ReleaseTiming = "upcoming" | "released" | "unknown";
 export type ProcessingStatus = "unprocessed" | "processing" | "processed" | "failed";
 
+export type OpsMeetingReviewStatus = "in_progress" | "review_ready" | "applied" | "declined" | "failed";
+
+export type OpsMeetingReview = {
+  status: OpsMeetingReviewStatus;
+  runId: string | null;
+  opsMeetingId: string;
+  review?: Record<string, unknown> | null;
+};
+
 export type OpsCase = {
   id: string;
   display_name: string;
@@ -76,4 +85,6 @@ export type LinkableWorkspace = {
   artist_name: string | null;
   account_id: string;
   account_name: string | null;
+  contact_email?: string | null;
+  contact_handle?: string | null;
 };

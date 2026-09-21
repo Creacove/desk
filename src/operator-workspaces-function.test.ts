@@ -22,7 +22,8 @@ describe("operator workspace gateway", () => {
     const functionSource = read("supabase", "functions", "operator-workspaces", "index.ts");
     expect(functionSource).toContain('action: "list"');
     expect(functionSource).toContain('action: "load"');
-    expect(functionSource).toContain("limit(25)");
+    expect(functionSource).toContain("MAX_OPERATOR_WORKSPACES = 25");
+    expect(functionSource).toContain("slice(0, MAX_OPERATOR_WORKSPACES)");
     expect(functionSource).toContain("accessMode: \"operator\"");
     expect(functionSource).toContain("workspace_opened");
     expect(functionSource).not.toContain("account_memberships");

@@ -1,6 +1,6 @@
 import type { User } from "@supabase/supabase-js";
 import { buildMusicPath } from "./opsService";
-import type { LinkableWorkspace, OpsActivity, OpsCase, OpsFollowup, OpsMeeting, TodayItem } from "./types";
+import type { LinkableWorkspace, OpsActivity, OpsCase, OpsFollowup, OpsMeeting, OpsMeetingReview, TodayItem } from "./types";
 import { requireSupabase } from "./supabase";
 
 async function result<T>(request: PromiseLike<{ data: T | null; error: { message: string } | null }>): Promise<T> {
@@ -136,6 +136,25 @@ export async function createMeeting(input: Pick<OpsMeeting, "ops_case_id" | "mee
 
 export async function updateMeeting(meetingId: string, patch: Partial<Pick<OpsMeeting, "scheduled_at" | "completed_at" | "transcript" | "outcome" | "processing_status" | "processed_at">>): Promise<OpsMeeting> {
   return result<OpsMeeting>(requireSupabase().from("ops_meetings").update(patch).eq("id", meetingId).select().single());
+}
+
+export async function processOpsMeeting(opsMeetingId: string, artistWorkspaceId: string): Promise<OpsMeetingReview> {
+  const { data, error } = await requireSupabase().functions.invoke("ops-meeting-process", {
+    body: { opsMeetingId, artistWorkspaceId },
+  });
+  if (error) throw new Error(error.message);
+  return data as OpsMeetingReview;
+}
+
+export async function applyOpsMeeting(input: { opsMeetingId: string; artistWorkspaceId: string; decision: "apply" | "decline"; editedPayload?: Record<string, unknown> }): Promise<OpsMeetingReview> {
+  const { data, error } = await requireSupabase().functions.invoke("ops-meeting-apply", { body: input });
+  if (error) throw new Error(error.message);
+  return data as OpsMeetingReview;
+}
+
+export function buildDeskMeetingReviewUrl(artistWorkspaceId: string, opsMeetingId: string) {
+  const deskUrl = String(import.meta.env.VITE_DESK_URL || "https://desk.ordersounds.com").replace(/\/$/, "");
+  return `${deskUrl}/admin/workspaces/${encodeURIComponent(artistWorkspaceId)}?opsMeetingId=${encodeURIComponent(opsMeetingId)}`;
 }
 
 export async function createFollowup(input: Pick<OpsFollowup, "ops_case_id" | "due_at" | "kind"> & Partial<Pick<OpsFollowup, "assigned_user_id">>): Promise<OpsFollowup> {
