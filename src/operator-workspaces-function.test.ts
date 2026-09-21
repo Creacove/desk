@@ -18,11 +18,12 @@ describe("operator workspace gateway", () => {
     expect(authorization).not.toContain("billing_");
   });
 
-  it("supports only bounded list/load actions and never returns customer permissions", () => {
+  it("supports browser CORS, returns the full current workspace set, and never returns customer permissions", () => {
     const functionSource = read("supabase", "functions", "operator-workspaces", "index.ts");
     expect(functionSource).toContain('action: "list"');
     expect(functionSource).toContain('action: "load"');
-    expect(functionSource).toContain("MAX_OPERATOR_WORKSPACES = 25");
+    expect(functionSource).toContain('"Access-Control-Allow-Origin": "*"');
+    expect(functionSource).toContain("MAX_OPERATOR_WORKSPACES = 500");
     expect(functionSource).toContain("slice(0, MAX_OPERATOR_WORKSPACES)");
     expect(functionSource).toContain("account_memberships");
     expect(functionSource).toContain("memberEmails");

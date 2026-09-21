@@ -10,12 +10,13 @@ type OperatorWorkspaceRequest =
   | { action: "load"; artistWorkspaceId: string };
 
 const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Cache-Control": "no-store",
   "Content-Type": "application/json",
 };
-const MAX_OPERATOR_WORKSPACES = 25;
+const MAX_OPERATOR_WORKSPACES = 500;
 
 Deno.serve(withAppErrorCapture("operator-workspaces", async (request) => {
   if (request.method === "OPTIONS") return json({ ok: true });
