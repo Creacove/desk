@@ -37,4 +37,11 @@ describe("OrderSounds Ops control-plane database contract", () => {
     expect(sql).not.toMatch(/has_active_workspace_entitlement/i);
     expect(sql).not.toMatch(/create table public\.today_tasks/i);
   });
+
+  it("qualifies the Ops Today item key inside its RETURN QUERY", () => {
+    const sql = readFileSync(migrationPath, "utf8");
+
+    expect(sql).toMatch(/select\s+items\.item_key[\s\S]+from\s+items/i);
+    expect(sql).toMatch(/order by\s+items\.priority,\s+items\.due_at\s+nulls last,\s+lower\(items\.display_name\),\s+items\.item_key/i);
+  });
 });

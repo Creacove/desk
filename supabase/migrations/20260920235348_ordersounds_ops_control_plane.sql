@@ -512,9 +512,10 @@ begin
     from public.ops_cases case_row
     where case_row.stage = 'activation' and case_row.desk_workspace_id is null
   )
-  select item_key, kind, priority, case_id, meeting_id, followup_id, display_name, reason, action, due_at
+  select items.item_key, items.kind, items.priority, items.case_id, items.meeting_id, items.followup_id,
+         items.display_name, items.reason, items.action, items.due_at
   from items
-  order by priority, due_at nulls last, lower(display_name), item_key;
+  order by items.priority, items.due_at nulls last, lower(items.display_name), items.item_key;
 end;
 $$;
 
