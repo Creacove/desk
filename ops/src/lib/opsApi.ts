@@ -150,10 +150,14 @@ export async function searchLinkableWorkspaces(query: string): Promise<LinkableW
   return result<LinkableWorkspace[]>(requireSupabase().rpc("list_ops_linkable_workspaces_v1", { p_query: query, p_limit: 20 }));
 }
 
-export async function linkCaseWorkspace(caseId: string, workspaceId: string, expectedCurrentWorkspaceId: string | null): Promise<OpsCase> {
-  return result<OpsCase>(requireSupabase().rpc("link_ops_case_workspace_v1", {
-    p_case_id: caseId,
-    p_workspace_id: workspaceId,
+export function buildLinkCaseWorkspaceParams(caseId: string, workspaceId: string, expectedCurrentWorkspaceId: string | null) {
+  return {
+    p_ops_case_id: caseId,
+    p_artist_workspace_id: workspaceId,
     p_expected_current_workspace_id: expectedCurrentWorkspaceId,
-  }));
+  };
+}
+
+export async function linkCaseWorkspace(caseId: string, workspaceId: string, expectedCurrentWorkspaceId: string | null): Promise<OpsCase> {
+  return result<OpsCase>(requireSupabase().rpc("link_ops_case_workspace_v1", buildLinkCaseWorkspaceParams(caseId, workspaceId, expectedCurrentWorkspaceId)));
 }
