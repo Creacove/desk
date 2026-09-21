@@ -93,3 +93,81 @@ $$;
 revoke all on function private.can_operator_access_workspace(uuid) from public, anon;
 grant usage on schema private to authenticated;
 grant execute on function private.can_operator_access_workspace(uuid) to authenticated;
+
+-- The Edge gateway cannot query the private schema through PostgREST directly.
+-- Expose only the boolean kill-switch state to the service role; authenticated
+-- clients never receive this function.
+create or replace function public.operator_access_enabled_v1()
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1
+    from private.operator_access_config
+    where singleton = true
+      and enabled = true
+  );
+$$;
+
+revoke all on function public.operator_access_enabled_v1() from public, anon, authenticated;
+grant execute on function public.operator_access_enabled_v1() to service_role;
+
+-- Operator inspection is deliberately additive. These policies are SELECT-only
+-- and are guarded by the kill-switched, exact-workspace helper above. Customer
+-- membership policies remain unchanged and continue to own all customer access.
+do $$
+declare
+  table_name text;
+begin
+  foreach table_name in array array[
+    'artist_profiles',
+    'source_sync_jobs',
+    'operating_events',
+    'evidence_items',
+    'artifact_links',
+    'manager_outputs',
+    'manager_synthesis_runs',
+    'manager_run_actions',
+    'missions',
+    'mission_plan_versions',
+    'checkpoints',
+    'mission_plan_checkpoints',
+    'tasks',
+    'task_steps',
+    'task_state_events',
+    'task_results',
+    'reviews',
+    'memory_entries',
+    'conversations',
+    'conversation_messages',
+    'music_items',
+    'music_projects',
+    'music_project_items',
+    'music_identifiers',
+    'music_assets',
+    'music_credits',
+    'music_splits',
+    'music_split_contributors',
+    'documents',
+    'document_versions',
+    'uploaded_files',
+    'release_opportunities',
+    'release_date_change_requests'
+  ] loop
+    execute format('alter table public.%I enable row level security', table_name);
+    execute format(
+      'create index if not exists %I on public.%I (artist_workspace_id)',
+      table_name || '_operator_workspace_idx',
+      table_name
+    );
+    execute format(
+      'create policy %I on public.%I for select to authenticated using ((select private.can_operator_access_workspace(artist_workspace_id)))',
+      table_name || '_operator_workspace_select',
+      table_name
+    );
+  end loop;
+end;
+$$;
