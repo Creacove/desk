@@ -2117,6 +2117,7 @@ async function writeOperatingEvent(db, input, context, event) {
     artist_id: input.artistId,
     actor_type: "manager",
     source_type: context.sourceType,
+    source_id: context.sourceId ?? null,
     manager_synthesis_run_id: context.runId,
     ...event,
     dedupe_key: `${context.runId}:${String(event.event_type ?? "manager_graph")}:${String(event.target_type ?? "target")}:${String(event.target_id ?? "")}`
