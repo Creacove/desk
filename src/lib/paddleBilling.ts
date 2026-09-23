@@ -33,7 +33,7 @@ export function getPaddle(config: PaddleClientConfig) {
   }
   if (!paddlePromise) {
     initializedConfig = key;
-    paddlePromise = initializePaddle({
+    const attempt = initializePaddle({
       environment: config.environment,
       token: config.clientToken,
       ...(config.pwCustomer ? { pwCustomer: config.pwCustomer } : {}),
@@ -41,7 +41,15 @@ export function getPaddle(config: PaddleClientConfig) {
       .then((instance) => {
         if (!instance) throw new Error("Paddle.js did not initialize.");
         return instance;
+      })
+      .catch((error) => {
+        if (paddlePromise === attempt) {
+          paddlePromise = null;
+          initializedConfig = null;
+        }
+        throw error;
       });
+    paddlePromise = attempt;
   }
   return paddlePromise;
 }

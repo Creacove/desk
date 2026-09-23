@@ -2966,6 +2966,7 @@ function SpotifyIdentityGate({
   const [query, setQuery] = useState("");
   const [candidates, setCandidates] = useState<ProductionSpotifyArtistCandidate[]>([]);
   const [checkoutPreview, setCheckoutPreview] = useState<ProductionBillingCheckoutPreview | null>(null);
+  const [selectedCandidate, setSelectedCandidate] = useState<ProductionSpotifyArtistCandidate | null>(null);
   const [catalogPreview, setCatalogPreview] = useState<ProductionSpotifyCatalogPreview | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [messageKind, setMessageKind] = useState<"search" | "checkout">("search");
@@ -2974,9 +2975,10 @@ function SpotifyIdentityGate({
   const [selectedArtistName, setSelectedArtistName] = useState<string | null>(null);
   const [selectedArtistId, setSelectedArtistId] = useState<string | null>(null);
   const pricingRequestRef = useRef(0);
+  const resumeCheckoutOnMount = useRef(true);
 
   useEffect(() => {
-    if (!billingService?.loadLatestCheckoutPreview || checkoutPreview) {
+    if (!resumeCheckoutOnMount.current || !billingService?.loadLatestCheckoutPreview || checkoutPreview || selectedCandidate) {
       return;
     }
 
@@ -3019,7 +3021,7 @@ function SpotifyIdentityGate({
     return () => {
       cancelled = true;
     };
-  }, [billingService, checkoutPreview, spotifyArtistAdapter, user, workspace]);
+  }, [billingService, checkoutPreview, selectedCandidate, spotifyArtistAdapter, user, workspace]);
 
   useEffect(() => {
     const normalizedQuery = query.trim();
@@ -3065,7 +3067,7 @@ function SpotifyIdentityGate({
     };
   }, [query, spotifyArtistAdapter]);
 
-  async function selectCandidate(candidate: ProductionSpotifyArtistCandidate) {
+  function selectCandidate(candidate: ProductionSpotifyArtistCandidate) {
     if (!billingService) {
       setMessage("Billing checkout is not configured for this environment.");
       return;
@@ -3076,39 +3078,64 @@ function SpotifyIdentityGate({
       return;
     }
 
+    const requestId = ++pricingRequestRef.current;
+    resumeCheckoutOnMount.current = false;
+    setSelectedCandidate(candidate);
+    setCheckoutPreview(null);
+    setCatalogPreview(null);
+    setSelectedArtistName(candidate.name);
+    setSelectedArtistId(candidate.spotifyArtistId);
+    setMessage(null);
+    trackEvent("artist selected", {
+      artist_id: candidate.spotifyArtistId,
+      selection_source: "spotify search",
+      is_test_user: isTestUserEmail(user.email),
+    });
+    const previewCatalog = spotifyArtistAdapter?.previewCatalog;
+    if (previewCatalog) {
+      void Promise.resolve().then(() => previewCatalog(candidate))
+        .then((catalog) => {
+          if (requestId === pricingRequestRef.current) setCatalogPreview(catalog);
+        })
+        .catch((catalogError) => {
+          reportBrowserServiceError(catalogError, {
+            stage: "artist_catalog_preview",
+            artistId: candidate.spotifyArtistId,
+          });
+        });
+    }
+    void prepareSelectedCandidate(candidate, requestId);
+  }
+
+  async function prepareSelectedCandidate(candidate: ProductionSpotifyArtistCandidate, requestId = ++pricingRequestRef.current) {
+    if (!billingService || !user) return;
     try {
       setSelectPending(true);
-      setSelectedArtistName(candidate.name);
-      setSelectedArtistId(candidate.spotifyArtistId);
-      setMessageKind("search");
       setMessage(null);
-      const catalog = spotifyArtistAdapter?.previewCatalog
-        ? await spotifyArtistAdapter.previewCatalog(candidate).catch((catalogError) => {
-            reportBrowserServiceError(catalogError, {
-              stage: "artist_catalog_preview",
-              artistId: candidate.spotifyArtistId,
-            });
-            return {
-              artist: {
-                spotifyArtistId: candidate.spotifyArtistId,
-                name: candidate.name,
-                spotifyUrl: candidate.spotifyUrl,
-                imageUrl: candidate.imageUrl,
-              },
-              standaloneSingles: [],
-            };
-          })
-        : null;
-      const requestId = ++pricingRequestRef.current;
-      const prepareCheckout = () => billingService.prepareProviderCheckout
-        ? billingService.prepareProviderCheckout({ user, candidate, interval: "monthly", providerPreference: "auto" })
-        : billingService.createCheckoutPreview({ user, candidate });
+      const prepareCheckout = () => billingService.loadProviderPricing
+        ? billingService.loadProviderPricing({ providerPreference: "auto" }).then((pricing): ProductionBillingCheckoutPreview => ({
+            checkoutSessionId: "",
+            reference: "",
+            provider: pricing.provider,
+            status: "open",
+            artist: candidate,
+            interval: "monthly",
+            planKey: "solo",
+            productId: pricing.productId,
+            priceId: pricing.intervalOptions.monthly.priceId,
+            formattedTotal: pricing.intervalOptions.monthly.formattedTotal,
+            paddleConfig: pricing.paddleConfig,
+            intervalOptions: pricing.intervalOptions,
+          }))
+        : billingService.prepareProviderCheckout
+          ? billingService.prepareProviderCheckout({ user, candidate, interval: "monthly", providerPreference: "auto" })
+          : billingService.createCheckoutPreview({ user, candidate });
       let preview: ProductionBillingCheckoutPreview;
       try {
         preview = await prepareCheckout();
       } catch (firstCheckoutError) {
         reportBrowserServiceError(firstCheckoutError, {
-          stage: "artist_checkout_prepare",
+          stage: billingService.loadProviderPricing ? "artist_paywall_pricing" : "artist_checkout_prepare",
           attempt: 1,
           artistId: candidate.spotifyArtistId,
           outcome: "retrying",
@@ -3117,7 +3144,7 @@ function SpotifyIdentityGate({
           preview = await prepareCheckout();
         } catch (retryCheckoutError) {
           reportBrowserServiceError(retryCheckoutError, {
-            stage: "artist_checkout_prepare",
+            stage: billingService.loadProviderPricing ? "artist_paywall_pricing" : "artist_checkout_prepare",
             attempt: 2,
             artistId: candidate.spotifyArtistId,
             outcome: "failed",
@@ -3126,22 +3153,12 @@ function SpotifyIdentityGate({
         }
       }
       if (requestId !== pricingRequestRef.current) return;
-      trackEvent("artist selected", {
-        artist_id: candidate.spotifyArtistId,
-        selection_source: "spotify search",
-        is_test_user: isTestUserEmail(user.email),
-      });
-      runFrontDoorTransition(() => {
-        setCatalogPreview(catalog);
-        setCheckoutPreview(preview);
-      });
+      setCheckoutPreview(preview);
     } catch (connectError) {
-      setMessageKind("checkout");
+      if (requestId !== pricingRequestRef.current) return;
       setMessage(readErrorMessage(connectError, "Checkout preview could not be prepared."));
-      setSelectedArtistName(null);
-      setSelectedArtistId(null);
     } finally {
-      setSelectPending(false);
+      if (requestId === pricingRequestRef.current) setSelectPending(false);
     }
   }
 
@@ -3155,7 +3172,7 @@ function SpotifyIdentityGate({
         setSelectPending(true);
         setMessage(null);
         let payablePreview = checkoutPreview;
-        if (checkoutPreview.interval !== interval) {
+        if (!checkoutPreview.checkoutSessionId || checkoutPreview.interval !== interval) {
           if (!billingService.prepareProviderCheckout) {
             throw new Error("The selected billing interval could not be prepared.");
           }
@@ -3171,6 +3188,11 @@ function SpotifyIdentityGate({
         }
         await billingService.openProviderCheckout({ user, preview: payablePreview });
       } catch (checkoutError) {
+        reportBrowserServiceError(checkoutError, {
+          stage: "artist_checkout_open",
+          artistId: checkoutPreview.artist.spotifyArtistId,
+          interval,
+        });
         setMessage(readErrorMessage(checkoutError, "Secure checkout could not be opened."));
       } finally {
         setSelectPending(false);
@@ -3210,15 +3232,26 @@ function SpotifyIdentityGate({
     try {
       setSelectPending(true);
       setMessage(null);
-      const preview = await billingService.prepareProviderCheckout({
-        user,
-        candidate: checkoutPreview.artist,
-        existingWorkspace: workspace ?? undefined,
-        interval: checkoutPreview.interval,
-        planKey,
-        providerPreference: planKey === "team_6" ? "paddle" : workspace?.billingProvider ?? "auto",
-      });
-      setCheckoutPreview(preview);
+      if (checkoutPreview.checkoutSessionId || !billingService.loadProviderPricing) {
+        const preview = await billingService.prepareProviderCheckout({
+          user,
+          candidate: checkoutPreview.artist,
+          existingWorkspace: workspace ?? undefined,
+          interval: checkoutPreview.interval,
+          planKey,
+          providerPreference: planKey === "team_6" ? "paddle" : workspace?.billingProvider ?? "auto",
+        });
+        setCheckoutPreview(preview);
+      } else {
+        const pricing = await billingService.loadProviderPricing({ providerPreference: "paddle" });
+        const options = planKey === "team_6" ? pricing.team?.intervalOptions : pricing.intervalOptions;
+        if (!options) throw new Error("Team pricing is unavailable.");
+        setCheckoutPreview({ ...checkoutPreview, planKey, provider: pricing.provider,
+          productId: planKey === "team_6" ? pricing.team?.productId : pricing.productId,
+          priceId: options[checkoutPreview.interval].priceId,
+          formattedTotal: options[checkoutPreview.interval].formattedTotal,
+          intervalOptions: options });
+      }
     } catch (planError) {
       setMessage(readErrorMessage(planError, "The selected plan could not be prepared."));
     } finally {
@@ -3231,12 +3264,15 @@ function SpotifyIdentityGate({
   }
 
   async function redeemPrivateBetaCode(code: string) {
-    if (!checkoutPreview || !billingService?.redeemPrivateBetaCode) return;
+    if (!checkoutPreview || !billingService?.redeemPrivateBetaCode || !user) return;
     try {
       setSelectPending(true);
       setMessage(null);
       trackEvent("beta code submitted", { is_test_user: isTestUserEmail(user?.email) });
-      const result = await billingService.redeemPrivateBetaCode({ checkoutSessionId: checkoutPreview.checkoutSessionId, code });
+      if (!checkoutPreview.checkoutSessionId && !billingService.prepareProviderCheckout) throw new Error("Billing is temporarily unavailable.");
+      const payablePreview = checkoutPreview.checkoutSessionId ? checkoutPreview
+        : await billingService.prepareProviderCheckout!({ user, candidate: checkoutPreview.artist, interval: checkoutPreview.interval, planKey: checkoutPreview.planKey ?? "solo" });
+      const result = await billingService.redeemPrivateBetaCode({ checkoutSessionId: payablePreview.checkoutSessionId, code });
       trackEvent("beta invitation activated", {
         artist_workspace_id: result.workspace.artistWorkspaceId,
         access_source: "private_beta",
@@ -3250,16 +3286,22 @@ function SpotifyIdentityGate({
     }
   }
 
-  if (checkoutPreview) {
+  if (checkoutPreview || selectedCandidate) {
     return (
       <PaywallPreviewScreen
         preview={checkoutPreview}
+        selectedArtist={selectedCandidate ?? checkoutPreview!.artist}
         catalogPreview={catalogPreview}
-        pending={selectPending}
+        pending={selectPending && Boolean(checkoutPreview)}
+        preparing={selectPending && !checkoutPreview}
         error={message}
+        onRetryPrepare={selectedCandidate ? () => void prepareSelectedCandidate(selectedCandidate) : undefined}
         onBack={() => {
+          pricingRequestRef.current += 1;
+          resumeCheckoutOnMount.current = false;
           runFrontDoorTransition(() => {
             setCheckoutPreview(null);
+            setSelectedCandidate(null);
             setCatalogPreview(null);
             setMessage(null);
             setSelectedArtistName(null);

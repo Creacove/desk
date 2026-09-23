@@ -256,9 +256,12 @@ export function SetupScreen({
 
 export function PaywallPreviewScreen({
   preview,
+  selectedArtist,
   catalogPreview,
   pending = false,
+  preparing = false,
   error,
+  onRetryPrepare,
   onSubscribe,
   onPlanChange,
   onIntervalChange,
@@ -267,10 +270,13 @@ export function PaywallPreviewScreen({
   onBack,
   onSignOut,
 }: {
-  preview: ProductionBillingCheckoutPreview;
+  preview: ProductionBillingCheckoutPreview | null;
+  selectedArtist: ProductionSpotifyArtistCandidate;
   catalogPreview?: ProductionSpotifyCatalogPreview | null;
   pending?: boolean;
+  preparing?: boolean;
   error?: string | null;
+  onRetryPrepare?: () => void;
   onSubscribe: (interval: "monthly" | "yearly") => void | Promise<void>;
   onPlanChange?: (planKey: "solo" | "team_6") => void | Promise<void>;
   onIntervalChange?: (interval: "monthly" | "yearly") => void | Promise<void>;
@@ -282,12 +288,12 @@ export function PaywallPreviewScreen({
   const [showBetaCode, setShowBetaCode] = useState(false);
   const [betaCode, setBetaCode] = useState("");
   const [betaSubmitting, setBetaSubmitting] = useState(false);
-  const [selectedInterval, setSelectedInterval] = useState<"monthly" | "yearly">(preview.interval);
-  const [selectedPlanKey, setSelectedPlanKey] = useState<"solo" | "team_6">(preview.planKey ?? "solo");
-  const artist = preview.artist;
-  const intervalOption = preview.intervalOptions?.[selectedInterval];
-  const displayPreview = { ...preview, ...intervalOption, interval: selectedInterval };
-  const price = formatPaywallPrice(displayPreview);
+  const [selectedInterval, setSelectedInterval] = useState<"monthly" | "yearly">(preview?.interval ?? "monthly");
+  const [selectedPlanKey, setSelectedPlanKey] = useState<"solo" | "team_6">(preview?.planKey ?? "solo");
+  const artist = preview?.artist ?? selectedArtist;
+  const intervalOption = preview?.intervalOptions?.[selectedInterval];
+  const displayPreview = preview ? { ...preview, ...intervalOption, interval: selectedInterval } : null;
+  const price = displayPreview ? formatPaywallPrice(displayPreview) : error ? "Price unavailable" : "Loading price…";
   const intervalLabel = selectedInterval === "yearly" ? "year" : "month";
   const latestProject = catalogPreview?.latestProject ?? null;
   const standaloneSingles = catalogPreview?.standaloneSingles.slice(0, 6) ?? [];
@@ -399,7 +405,7 @@ export function PaywallPreviewScreen({
                     type="button"
                     aria-label="Solo plan"
                     aria-pressed={selectedPlanKey === "solo"}
-                    disabled={pending}
+                    disabled={pending || preparing || !preview}
                     onClick={() => {
                       setSelectedPlanKey("solo");
                       void onPlanChange("solo");
@@ -415,7 +421,7 @@ export function PaywallPreviewScreen({
                     type="button"
                     aria-label="Team plan"
                     aria-pressed={selectedPlanKey === "team_6"}
-                    disabled={pending}
+                    disabled={pending || preparing || !preview}
                     onClick={() => {
                       setSelectedPlanKey("team_6");
                       void onPlanChange("team_6");
@@ -442,7 +448,7 @@ export function PaywallPreviewScreen({
                     key={interval}
                     type="button"
                     aria-pressed={active}
-                    disabled={pending}
+                    disabled={pending || preparing || !preview}
                     onClick={() => {
                       setSelectedInterval(interval);
                       void onIntervalChange?.(interval);
@@ -464,11 +470,17 @@ export function PaywallPreviewScreen({
             </div>
 
             {checkoutError ? <p className="mt-4 text-[12px] font-semibold text-warning">{checkoutError}</p> : null}
+            {checkoutError && !preview && onRetryPrepare ? (
+              <button type="button" onClick={onRetryPrepare} className="mt-2 text-[12px] font-semibold text-brand-accent underline underline-offset-4">
+                Retry checkout
+              </button>
+            ) : null}
 
             <Button
               type="button"
               onClick={() => void onSubscribe(selectedInterval)}
               pending={pending}
+              disabled={!preview || preparing}
               trailingIcon={<ArrowRight className="h-4 w-4" aria-hidden="true" />}
               size="lg"
               className="mt-5 w-full"
@@ -481,7 +493,7 @@ export function PaywallPreviewScreen({
               Secure checkout
             </div>
 
-            {privateBetaEnabled && onRedeemPrivateBeta ? (
+            {privateBetaEnabled && preview && onRedeemPrivateBeta ? (
               <div className="mt-4 border-t border-foreground/8 pt-4">
                 {!showBetaCode ? (
                   <button

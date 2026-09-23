@@ -13,6 +13,7 @@ import type { ArtistProfileViewModel, CleanProductionRepositories, ConversationV
 import type {
   ProductionAuthAdapter,
   ProductionBillingService,
+  ProductionBillingCheckoutPreview,
   ProductionProfileSetupService,
   ProductionSpotifyArtistAdapter,
   ProductionWorkspace,
@@ -811,8 +812,8 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByTestId("artist-search-loader")).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "Select artist Nova Vale" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Select artist Nova Vale" }));
-    expect(await screen.findByText("Found. Opening the Desk preview.")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Find your artist." })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Open Nova Vale’s Desk." })).toBeInTheDocument();
+    await waitFor(() => expect(resolveCatalogPreview).toBeTypeOf("function"));
 
     await act(async () => {
       resolveCatalogPreview?.({
@@ -827,7 +828,7 @@ describe("Clean production prototype-match shell", () => {
     });
 
     await screen.findByRole("heading", { name: "Open Nova Vale’s Desk." });
-    expect(selectionActions).toEqual(["preview:Nova Vale", "checkout:Nova Vale"]);
+    expect(selectionActions).toEqual(expect.arrayContaining(["preview:Nova Vale", "checkout:Nova Vale"]));
     expect(checkoutArtists).toEqual(["Nova Vale"]);
     expect(analyticsMock.trackEvent).toHaveBeenCalledWith("artist selected", {
       artist_id: "spotify-artist-1",
@@ -839,7 +840,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getAllByAltText("Nova Vale artist image").length).toBeGreaterThan(0);
     expect(screen.getByText("$20")).toBeInTheDocument();
     expect(screen.getByText("per month")).toBeInTheDocument();
-    expect(screen.getByText("Nova Season")).toBeInTheDocument();
+    expect(await screen.findByText("Nova Season")).toBeInTheDocument();
     expect(screen.getByText("First Move")).toBeInTheDocument();
     expect(screen.getByText(/your desk opens with catalog import, audience intelligence, manager brief, and music reads/i)).toBeInTheDocument();
     expect(screen.queryByText("Sable Day")).not.toBeInTheDocument();
@@ -942,6 +943,8 @@ describe("Clean production prototype-match shell", () => {
       fireEvent.click(await screen.findByRole("button", { name: "Select artist Nova Vale" }));
 
       expect(await screen.findByText("Couldn’t open checkout. Try again.")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Open Nova Vale’s Desk." })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Retry checkout" })).toBeInTheDocument();
       expect(prepareProviderCheckout).toHaveBeenCalledTimes(2);
       await waitFor(() => expect(capture).toHaveBeenCalledWith(expect.objectContaining({
         operation: "service_call_failed",
@@ -956,6 +959,99 @@ describe("Clean production prototype-match shell", () => {
     } finally {
       disposeTelemetry();
     }
+  }, 20000);
+
+  it("opens the selected artist paywall before checkout preparation finishes", async () => {
+    let rejectCheckout: ((error: Error) => void) | undefined;
+    const prepareProviderCheckout = vi.fn(() => new Promise<ProductionBillingCheckoutPreview>((_resolve, reject) => {
+      rejectCheckout = reject;
+    }));
+    const billingService = {
+      prepareProviderCheckout,
+      async createCheckoutPreview() { throw new Error("fallback checkout should not run"); },
+      async loadBillingStatus() { throw new Error("billing status should not run"); },
+    } satisfies ProductionBillingService;
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(null)}
+        billingService={billingService}
+        spotifyArtistAdapter={spotifyAdapterWithAsyncConnect([])}
+        repositories={repositoriesFor("Nova Vale")}
+        initialView="connectArtist"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Find your artist." })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Search artist name"), { target: { value: "Nova" } });
+    fireEvent.click(await screen.findByRole("button", { name: "Select artist Nova Vale" }));
+
+    expect(screen.getByRole("heading", { name: "Open Nova Vale’s Desk." })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Start my Desk" })).toBeDisabled();
+
+    await act(async () => { rejectCheckout?.(new Error("Checkout gateway unavailable")); });
+    await act(async () => { rejectCheckout?.(new Error("Checkout gateway unavailable")); });
+    expect(screen.getByRole("heading", { name: "Open Nova Vale’s Desk." })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry checkout" })).toBeInTheDocument();
+
+    prepareProviderCheckout.mockResolvedValueOnce({
+      checkoutSessionId: "checkout-recovered",
+      reference: "checkout-recovered",
+      status: "open",
+      artist: {
+        spotifyArtistId: "spotify-artist-1",
+        name: "Nova Vale",
+        spotifyUrl: "https://open.spotify.com/artist/spotify-artist-1",
+        genres: ["afro-fusion"],
+      },
+      interval: "monthly",
+      formattedTotal: "$24",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Retry checkout" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Start my Desk" })).toBeEnabled());
+  }, 20000);
+
+  it("does not create a Paddle checkout session until Start my Desk", async () => {
+    const prepareProviderCheckout = vi.fn().mockResolvedValue({
+      checkoutSessionId: "session-on-purchase",
+      reference: "session-on-purchase",
+      provider: "paddle",
+      status: "open",
+      artist: { spotifyArtistId: "spotify-artist-1", name: "Nova Vale", spotifyUrl: "https://open.spotify.com/artist/spotify-artist-1", genres: [] },
+      interval: "monthly",
+      formattedTotal: "$24",
+      priceId: "pri_monthly",
+      productId: "pro_solo",
+      paddleConfig: { environment: "sandbox", clientToken: "test_token" },
+      customData: { checkoutSessionId: "session-on-purchase" },
+    });
+    const openProviderCheckout = vi.fn().mockResolvedValue(undefined);
+    const billingService = {
+      loadProviderPricing: vi.fn().mockResolvedValue({
+        provider: "paddle",
+        productId: "pro_solo",
+        paddleConfig: { environment: "sandbox", clientToken: "test_token" },
+        intervalOptions: { monthly: { formattedTotal: "$24", priceId: "pri_monthly" }, yearly: { formattedTotal: "$240", priceId: "pri_yearly" } },
+      }),
+      prepareProviderCheckout,
+      openProviderCheckout,
+      async createCheckoutPreview() { throw new Error("fallback checkout should not run"); },
+      async loadBillingStatus() { throw new Error("billing status should not run"); },
+    } satisfies ProductionBillingService;
+
+    render(<ProductionApp authAdapter={authWithSession(session)} workspaceLoader={workspaceLoaderWith(null)}
+      billingService={billingService} spotifyArtistAdapter={spotifyAdapterWithAsyncConnect([])}
+      repositories={repositoriesFor("Nova Vale")} initialView="connectArtist" />);
+    expect(await screen.findByRole("heading", { name: "Find your artist." })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Search artist name"), { target: { value: "Nova" } });
+    fireEvent.click(await screen.findByRole("button", { name: "Select artist Nova Vale" }));
+    expect(await screen.findByText("$24")).toBeInTheDocument();
+    expect(prepareProviderCheckout).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Start my Desk" }));
+    await waitFor(() => expect(prepareProviderCheckout).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(openProviderCheckout).toHaveBeenCalledTimes(1));
   }, 20000);
 
   it("opens Desk HQ by default when the workspace setup is already complete", async () => {

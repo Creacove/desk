@@ -8,6 +8,7 @@ const migrationNames = readdirSync(migrationsDir).filter((name) =>
 );
 const migrationSql = migrationNames.map((name) => readFileSync(join(migrationsDir, name), "utf8")).join("\n");
 const identifierMigration = readFileSync(join(migrationsDir, "20260921023800_operator_workspace_identifiers.sql"), "utf8");
+const workspaceDependencyMigrationPath = join(migrationsDir, "20260921100100_operator_workspace_dependency_access.sql");
 
 describe("Desk operator access schema contract", () => {
   it("creates the kill switch, workspace guard, audit trail, and meeting workflow boundary", () => {
@@ -44,5 +45,15 @@ describe("Desk operator access schema contract", () => {
     expect(identifierMigration).toContain("contact_emails");
     expect(identifierMigration).toContain("person.email ilike");
     expect(identifierMigration).toContain("case_row.primary_contact_email ilike");
+  });
+
+  it("keeps team settings private while making customer policy evaluation operator-safe", () => {
+    expect(existsSync(workspaceDependencyMigrationPath)).toBe(true);
+    if (!existsSync(workspaceDependencyMigrationPath)) return;
+    const dependencyMigration = readFileSync(workspaceDependencyMigrationPath, "utf8");
+    expect(dependencyMigration).toContain("private.workspace_team_settings_configured");
+    expect(dependencyMigration).toContain("security definer");
+    expect(dependencyMigration).toContain("create policy operating_events_personal_select");
+    expect(dependencyMigration).not.toContain("grant select on public.workspace_team_settings to authenticated");
   });
 });
